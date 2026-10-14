@@ -1,0 +1,18 @@
+STANDALONE ARCHITECTURE:
+- wallet-snapshot.json: publicly shared Drive file, fetched via
+  https://drive.google.com/uc?export=download&id=FILE_ID
+- Finary: no public unauthenticated API — we'll use localStorage to
+  store manually entered PEA/Livret A values that can be updated via
+  the dashboard's own "Update balances" form
+- The JSON snapshot gives us full transaction history
+- Refresh button: re-fetches the JSON snapshot + prompts for balance update
+- GitHub Pages hosts the static HTML — no server needed
+
+FINARY NOTE:
+Finary has no public API that works without OAuth. Options:
+A) Manual input form in the dashboard (simplest, user updates when needed)
+B) A tiny proxy (Vercel function) that holds the token — overkill for now
+C) User pastes the snapshot JSON manually — clunky
+
+Best approach: localStorage for Finary values + a small "Update balances"
+modal that pops up when values look stale (>24h old)
