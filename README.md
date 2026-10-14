@@ -1,57 +1,53 @@
-# 🦄 Rostom · Wealth Dashboard
+# Rostom · Wealth Dashboard
 
-Personal finance dashboard — live on GitHub Pages, data from Google Drive.
+Personal finance dashboard on GitHub Pages. **No balances or Drive file IDs are stored in this repo.**
 
-## Live dashboard
-👉 **https://rostom-baccar.github.io/wealth-dashboard/**
+Live (after Pages enable): https://rostom-baccar.github.io/wealth-dashboard/
+
+## Security model
+
+| Secret | Where it lives |
+|--------|----------------|
+| PEA / Livret A / PEE amounts | Your browser `localStorage` only |
+| Drive `wallet-snapshot.json` file ID | Your browser `localStorage` only (⚙️ Data) |
+| Transaction history | Google Drive file you control |
+
+The public GitHub repo contains **only** the HTML/JS shell (allocation *percentages* as structure, zeroed money defaults).
+
+### Important about “anyone with the link”
+
+If your Drive snapshot is shared as **anyone with the link**, then **anyone who learns the file ID can read it**. Hiding the URL is not encryption.
+
+- Do **not** paste the file ID into issues, commits, or screenshots.
+- Prefer keeping the snapshot link private to you; enter it once in the dashboard (stored locally).
+- For stronger security later: stop public sharing and put a tiny authenticated proxy in front of Drive.
 
 ## Architecture
 
 ```
-wallet app (Android)
-    ↓ syncs SQLite to
-Google Drive (wallet-database)
-    ↓ Apps Script reads every hour + on-demand
-Google Sheets + wallet-snapshot.json (public)
-    ↓ dashboard fetches on load / refresh
-index.html (GitHub Pages)
+wallet app → Drive (wallet-database)
+     → Apps Script (hourly) → wallet-snapshot.json
+     → dashboard Refresh → fetch JSON (file ID from localStorage)
+Balances modal → localStorage (PEA / Livret A / PEE / net income)
 ```
 
 ## Setup
 
-### 1. Apps Script (Google Sheets)
-1. Open your Google Sheet
-2. Extensions → Apps Script
-3. Replace all code with `WalletExport.gs`
-4. Run `installHourlyTrigger` once
-5. Run `runNow` to test — check Logs
-6. Copy the **snapshot file ID** from the `_meta` sheet cell A1
+1. Install `WalletExport.gs` in your Google Sheet, run `installHourlyTrigger`, then `runNow`.
+2. Copy the snapshot file ID from `_meta!A1`.
+3. Open the dashboard → **⚙️ Data** → paste file ID → Save.
+4. **💰 Balances** → enter PEA / Livret A / PEE / monthly net income / PEA contribution.
 
-### 2. Dashboard
-1. Open `index.html`
-2. Replace `1b6q8T5fN1V6XcRkIC7y6jsJgCTwEEmE0` with the file ID from step 1.6
-3. Commit and push — GitHub Pages serves it automatically
+## Features
 
-### 3. First open
-- Visit `https://rostom-baccar.github.io/wealth-dashboard/`
-- The balance modal opens automatically on first visit
-- Enter PEA, Livret A, PEE values from your apps
-- Values are saved in your browser's localStorage — private, never sent anywhere
-
-### 4. Daily use
-- **Refresh button**: re-fetches the latest wallet-snapshot.json
-- **Balances button**: update your PEA/Livret A manually when you check your apps
-- The Apps Script syncs data hourly automatically — you just hit Refresh on the dashboard
+- Net worth hero, EN default, strong anon blur
+- Savings chart derived from wallet spend + your net-income setting (vertical bars + PEA contribution)
+- Draggable sections (order saved in localStorage)
+- Refresh pulls the latest Drive snapshot
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `index.html` | Standalone dashboard (HTML + CSS + JS, no server needed) |
-| `WalletExport.gs` | Google Apps Script — reads SQLite, writes Sheet + JSON snapshot |
-
-## Data privacy
-- Transaction data lives in your Google Drive (private by default)
-- `wallet-snapshot.json` is shared with "anyone with link" — it contains your expense categories and amounts
-- Balance values (PEA, Livret A) are stored in your browser's localStorage only
-- No server, no database, no analytics
+| `index.html` | Dashboard UI |
+| `WalletExport.gs` | Apps Script → Sheet + JSON snapshot |
