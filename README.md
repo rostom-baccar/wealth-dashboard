@@ -29,7 +29,7 @@ index.html (GitHub Pages)
 
 ### 2. Dashboard
 1. Open `index.html`
-2. Replace `REPLACE_WITH_SNAPSHOT_FILE_ID` with the file ID from step 1.6
+2. Replace `1b6q8T5fN1V6XcRkIC7y6jsJgCTwEEmE0` with the file ID from step 1.6
 3. Commit and push — GitHub Pages serves it automatically
 
 ### 3. First open
