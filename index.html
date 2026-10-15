@@ -545,6 +545,35 @@ function saveBalancesToStorage(pea, livretA, pee, costBasis, monthlyNetIncome, p
   } catch (e) { console.warn('localStorage write:', e); }
 }
 
+function applyBalancesPayload(b, { persist = true } = {}) {
+  if (!b || typeof b !== 'object') return false;
+  if (b.pea != null) STATE.pea = +b.pea;
+  if (b.livretA != null) STATE.livretA = +b.livretA;
+  if (b.pee != null) STATE.pee = +b.pee;
+  if (b.costBasis != null) STATE.monthlyCostBasis = +b.costBasis;
+  if (b.monthlyNetIncome != null) STATE.monthlyNetIncome = +b.monthlyNetIncome;
+  if (b.peaMonthly != null) STATE.peaMonthly = +b.peaMonthly;
+  if (Array.isArray(b.peaAlloc) && b.peaAlloc.length) STATE.peaAlloc = b.peaAlloc;
+  STATE.balanceDate = b.updatedAt || b.date || new Date().toISOString();
+  STATE.finaryOk = !!(STATE.pea || STATE.livretA);
+  STATE.balancesSource = b.source || 'snapshot';
+  if (persist) {
+    try {
+      const vals = {
+        pea: STATE.pea, livretA: STATE.livretA, pee: STATE.pee,
+        costBasis: STATE.monthlyCostBasis,
+        monthlyNetIncome: STATE.monthlyNetIncome,
+        peaMonthly: STATE.peaMonthly,
+        peaAlloc: STATE.peaAlloc,
+        date: STATE.balanceDate,
+        source: STATE.balancesSource,
+      };
+      localStorage.setItem(LS_BALANCES, JSON.stringify(vals));
+    } catch (e) { console.warn('localStorage write:', e); }
+  }
+  return true;
+}
+
 async function fetchTransactions() {
   const fileId = getSnapshotFileId();
   if (!fileId) { STATE.driveOk = false; return; }
@@ -560,6 +589,8 @@ async function fetchTransactions() {
       .sort((a, b) => b.date - a.date);
     STATE.driveOk = true;
     STATE.lastSnapshotSync = data.lastSync;
+    // Prefer live balances baked into the snapshot (from Finary → Drive sync)
+    if (data.balances) applyBalancesPayload(data.balances);
   } catch (e) { console.warn('Snapshot fetch:', e.message); STATE.driveOk = false; }
 }
 
@@ -1231,7 +1262,7 @@ function updateStatus() {
   const now = new Date();
   document.getElementById('sync-time').textContent = T('updated') + ' : ' + now.toLocaleTimeString(lang==='fr'?'fr-FR':'en-GB',{hour:'2-digit',minute:'2-digit'}) + ' · ' + now.toLocaleDateString(lang==='fr'?'fr-FR':'en-GB');
   document.getElementById('status-bar').innerHTML = [
-    STATE.finaryOk  ? `<span class="pill pill-ok">Finary ✓</span>`  : `<span class="pill pill-err">Finary ✗</span>`,
+    STATE.finaryOk  ? `<span class="pill pill-ok">Finary ✓${STATE.balancesSource === 'finary' ? '' : ''}</span>`  : `<span class="pill pill-err">Balances ✗</span>`,
     STATE.driveOk   ? `<span class="pill pill-ok">Drive ✓</span>`   : `<span class="pill pill-err">Drive ✗</span>`,
     STATE.savingsOk ? `<span class="pill pill-ok">Savings ✓</span>` : `<span class="pill pill-err">Savings ✗</span>`,
     `<span class="pill pill-ok">${STATE.transactions.length} ${T('tx')}</span>`,
@@ -1289,8 +1320,11 @@ async function refreshAll() {
   } else {
     await refreshAll();
   }
-  if (!STATE.finaryOk || !STATE.balanceDate ||
-      (Date.now() - new Date(STATE.balanceDate).getTime()) > 48 * 3600 * 1000) {
+  // Only prompt for manual balances if snapshot didn't supply Finary data
+  // and cached values are missing/stale. PEE may still need the modal.
+  const stale = !STATE.balanceDate ||
+    (Date.now() - new Date(STATE.balanceDate).getTime()) > 48 * 3600 * 1000;
+  if ((!STATE.finaryOk || stale) && STATE.balancesSource !== 'finary') {
     setTimeout(showBalanceModal, 900);
   }
 })();

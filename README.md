@@ -51,3 +51,13 @@ Balances modal → localStorage (PEA / Livret A / PEE / net income)
 |------|---------|
 | `index.html` | Dashboard UI |
 | `WalletExport.gs` | Apps Script → Sheet + JSON snapshot |
+
+## Finary balances (Cursor → Drive → dashboard)
+
+Finary MCP works in Cursor (use Safari for OAuth if Chrome hangs). Live balances are written to Drive as `finary-balances.json` next to your wallet files. Apps Script merges that file into `wallet-snapshot.json` on each export so **Refresh** on the dashboard picks up PEA / Livret A / ETF allocation without typing them in.
+
+1. In Cursor: ask to "sync Finary balances to Drive" (or recreate `finary-balances.json`).
+2. In the Sheet: Extensions → Apps Script → paste latest `WalletExport.gs` → run `runNow` once.
+3. Snapshot file ID in `_meta!A1` should stay **stable** (script updates in place). Paste it once under **⚙️ Data**.
+
+PEE is not in Finary yet — set it via **💰 Balances** if needed.

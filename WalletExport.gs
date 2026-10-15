@@ -10,7 +10,8 @@ const SQLITE_FOLDER_ID = '1npXyzRNG1e41XoQ6v5wfTq78UT1hn-L_';
 const SQLITE_FILE_NAME = 'wallet-database';
 const SHEET_ID         = '16R36tG69nlTuF-Opb-YUep_HNzQg4wCa69jU7uWxXcY';
 const TAB_GID          = 450720486;
-const JSON_FILE_NAME   = 'wallet-snapshot.json'; // written alongside wallet-database
+const JSON_FILE_NAME     = 'wallet-snapshot.json'; // written alongside wallet-database
+const BALANCES_FILE_NAME = 'finary-balances.json'; // optional; merged into snapshot if present
 
 // ================================================================
 // ENTRY POINT — hourly trigger + manual button both call this
@@ -61,6 +62,8 @@ function exportWalletToSheet() {
 // Format: { lastSync, transactions: [{date,type,category,amount,memo}] }
 // ================================================================
 function writeJsonSnapshot(rows) {
+  const folder = DriveApp.getFolderById(SQLITE_FOLDER_ID);
+
   const snapshot = {
     lastSync: new Date().toISOString(),
     transactions: rows.map(r => ({
@@ -74,36 +77,65 @@ function writeJsonSnapshot(rows) {
     }))
   };
 
-  const folder = DriveApp.getFolderById(SQLITE_FOLDER_ID);
-  const json   = JSON.stringify(snapshot);
+  // Merge Finary balances if Cursor (or another sync) wrote finary-balances.json
+  const balances = readSiblingJson_(folder, BALANCES_FILE_NAME);
+  if (balances) {
+    snapshot.balances = balances;
+    Logger.log('Merged balances from ' + BALANCES_FILE_NAME);
+  } else {
+    // Preserve previous snapshot.balances when rewriting in place
+    const prev = readExistingSnapshot_(folder);
+    if (prev && prev.balances) {
+      snapshot.balances = prev.balances;
+      Logger.log('Preserved previous snapshot.balances');
+    }
+  }
 
-  // Delete old snapshot file if it exists
-  const existing = folder.getFilesByName(JSON_FILE_NAME);
-  while (existing.hasNext()) existing.next().setTrashed(true);
-
-  // Write new one
-  const file = folder.createFile(JSON_FILE_NAME, json, 'application/json');
-
-  // Make it publicly readable so the standalone dashboard can fetch it
+  const json = JSON.stringify(snapshot);
+  const file = upsertJsonFile_(folder, JSON_FILE_NAME, json);
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 
   Logger.log('JSON snapshot written: ' + file.getId());
   Logger.log('Snapshot URL: https://drive.google.com/uc?export=download&id=' + file.getId());
 
-  // Store the file ID in a named range so the dashboard can find it
   try {
-    const ss    = SpreadsheetApp.openById(SHEET_ID);
-    const sheet = ss.getSheets()[0];
-    // Write snapshot URL to a known cell: A1 of the first sheet
-    // (we use a dedicated helper sheet to avoid clobbering data)
+    const ss = SpreadsheetApp.openById(SHEET_ID);
     let metaSheet = ss.getSheetByName('_meta');
     if (!metaSheet) metaSheet = ss.insertSheet('_meta');
     metaSheet.getRange('A1').setValue(file.getId());
     metaSheet.getRange('B1').setValue(new Date().toISOString());
-    metaSheet.getRange('A1').setNote('wallet-snapshot.json Drive file ID — used by standalone dashboard');
+    metaSheet.getRange('A1').setNote('wallet-snapshot.json Drive file ID — stable; dashboard stores this once');
   } catch(e) {
     Logger.log('Could not write meta sheet: ' + e.message);
   }
+}
+
+/** Update existing JSON file in place so the Drive file ID stays stable. */
+function upsertJsonFile_(folder, name, json) {
+  const existing = folder.getFilesByName(name);
+  if (existing.hasNext()) {
+    const file = existing.next();
+    // Trash any duplicates, keep the first
+    while (existing.hasNext()) existing.next().setTrashed(true);
+    file.setContent(json);
+    return file;
+  }
+  return folder.createFile(name, json, 'application/json');
+}
+
+function readSiblingJson_(folder, name) {
+  const files = folder.getFilesByName(name);
+  if (!files.hasNext()) return null;
+  try {
+    return JSON.parse(files.next().getBlob().getDataAsString());
+  } catch (e) {
+    Logger.log('Could not parse ' + name + ': ' + e.message);
+    return null;
+  }
+}
+
+function readExistingSnapshot_(folder) {
+  return readSiblingJson_(folder, JSON_FILE_NAME);
 }
 
 // ================================================================
