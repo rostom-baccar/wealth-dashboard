@@ -1336,11 +1336,7 @@ async function refreshAll() {
   } else {
     await refreshAll();
   }
-  // Don't auto-spam the modal. Only open once if PEA/Livret are missing
-  // after load (Finary sync not in snapshot yet). PEE/income are optional.
-  if (!STATE.pea && !STATE.livretA) {
-    setTimeout(showBalanceModal, 900);
-  }
+  // Never auto-open Settings — user opens it via the button when needed.
 })();
 
 // ═══════════════════════════════════════════════════════
