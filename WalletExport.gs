@@ -24,13 +24,19 @@ function exportWalletToSheet() {
     const db = parseSQLite(bytes);
     Logger.log('Tables: ' + Object.keys(db).join(', '));
 
-    const categories = buildLookup(db['category'] || [], 'id', 'name');
-    const wallets    = buildLookup(db['wallet']   || [], 'id', 'name');
+    // category.type: 1 = income, 2 = expense (Wallet Manager). Names can be blank!
+    const categories = {};
+    (db['category'] || []).forEach(c => {
+      categories[c.id] = { name: c.name || '', type: c.type };
+    });
+    const wallets = buildLookup(db['wallet'] || [], 'id', 'name');
 
     const trans = (db['trans'] || [])
       .filter(t => {
         const cat = categories[t['category_id']];
-        return cat && cat !== 'Month progress bar';
+        const name = (cat && cat.name) || '';
+        // Keep blank-named categories (salary lives here). Only drop progress-bar noise.
+        return name !== 'Month progress bar' && name !== 'Month progress bar compensation';
       })
       .sort((a, b) => (b['date_time'] || 0) - (a['date_time'] || 0))
       .map(t => {
@@ -38,9 +44,18 @@ function exportWalletToSheet() {
         const date     = new Date(epochMs);
         const dateStr  = Utilities.formatDate(date, 'Europe/Paris', 'MM/dd/yyyy, HH:mm');
         const amount   = (t['amount'] || 0) / 100.0;
-        const type     = amount < 0 ? 'Expense' : 'Income';
-        const category = categories[t['category_id']] || '';
-        const wallet   = wallets[t['wallet_id']]      || '';
+        const cat      = categories[t['category_id']] || {};
+        // Prefer amount sign; fall back to category.type (1=income)
+        const type     = amount > 0 || cat.type === 1 ? 'Income' : 'Expense';
+        // Blank income category names are usually salary in this app
+        let category   = cat.name || '';
+        if (!category) {
+          const note = (t['note'] || '').toLowerCase();
+          category = note.includes('salary') || note.includes('salaire')
+            ? 'Salary'
+            : (type === 'Income' ? 'Income' : 'Expense');
+        }
+        const wallet   = wallets[t['wallet_id']] || '';
         const memo     = t['note'] || '';
         return [dateStr, type, category, amount, 'EUR', memo, wallet];
       });
