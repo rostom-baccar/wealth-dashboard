@@ -412,3 +412,22 @@ function buildLookup(rows, keyCol, valCol) {
   rows.forEach(r => { map[r[keyCol]] = r[valCol]; });
   return map;
 }
+
+
+// ================================================================
+// WEB APP — deploy as "Execute as: Me", "Who has access: Anyone"
+// Dashboard Refresh calls this URL to rebuild wallet-snapshot.json
+// ================================================================
+function doGet(e) {
+  try {
+    exportWalletToSheet();
+    const out = { ok: true, at: new Date().toISOString() };
+    return ContentService
+      .createTextOutput(JSON.stringify(out))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: false, error: String(err && err.message || err) }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}

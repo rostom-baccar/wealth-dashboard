@@ -61,3 +61,13 @@ Finary MCP works in Cursor (use Safari for OAuth if Chrome hangs). Live balances
 3. Snapshot file ID in `_meta!A1` should stay **stable** (script updates in place). Paste it once under **⚙️ Data**.
 
 PEE is not in Finary yet — set it via **💰 Balances** if needed.
+
+## Refresh button
+
+1. (Optional) Deploy `WalletExport.gs` as a **Web app** (Execute as Me, Anyone) and paste the `/exec` URL in dashboard **Settings**. Refresh then triggers a live rebuild of `wallet-snapshot.json`.
+2. Refresh always re-fetches the Drive snapshot (wallet txs + merged Finary balances).
+3. Live Finary from the public page is not possible (no browser Finary API). Balances come from `finary-balances.json` merged by Apps Script — sync via Cursor when you want fresher PEA/Livret numbers.
+
+## Gemini AI summary
+
+Paste your Gemini API key in **Settings** (stored in `localStorage` only — never in this repo). Uses `gemini-2.0-flash`. Without a key, a local template brief is shown.
