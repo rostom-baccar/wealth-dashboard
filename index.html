@@ -136,7 +136,9 @@ body.anon .nw-amount{
 .exp-cat{font-size:11px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
 .exp-meta{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .exp-right{text-align:right;flex-shrink:0}
-.exp-amt{font-size:12px;font-weight:600;color:var(--red);white-space:nowrap}
+.exp-amt{font-size:12px;font-weight:600;white-space:nowrap}
+.exp-amt.exp{color:var(--red)}
+.exp-amt.inc{color:var(--green)}
 .exp-date{font-size:10px;color:var(--muted);margin-top:1px;white-space:nowrap}
 /* Month summary */
 .ms-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:12px}
@@ -347,7 +349,7 @@ body.anon .nw-amount{
 <div class="draggable-section" data-section="expenses-section" draggable="true">
   <div class="g2">
     <div class="card">
-      <div class="ct"><span class="drag-handle" title="Drag to reorder">⠿</span><span id="lbl-latest-exp">Latest Expenses</span><span id="exp-count"></span></div>
+      <div class="ct"><span class="drag-handle" title="Drag to reorder">⠿</span><span id="lbl-latest-exp">Latest Expenses / Incomes</span><span id="exp-count"></span></div>
       <div class="exp-list" id="expense-list"></div>
     </div>
     <div class="card">
@@ -412,7 +414,7 @@ const LABELS = {
     'lbl-s-expenses':'Dépenses','lbl-cashflow':'Flux mensuels',
     'lbl-cat-title':'Dépenses par catégorie','lbl-all-time':'tout temps',
     'lbl-fixed-var':'Fixes vs Variables','lbl-fixed':'Fixes','lbl-variable':'Variables',
-    'lbl-latest-exp':'Dernières dépenses','lbl-this-month':'Ce mois-ci',
+    'lbl-latest-exp':'Dernières dépenses / revenus','lbl-this-month':'Ce mois-ci',
     'lbl-savings-title':'Épargne mensuelle & versements PEA','lbl-nw-hero':'Patrimoine net',
     'lbl-s-proj':'Projections',
     'lbl-proj-title':'Projection PEA — Interactif','lbl-sl-monthly':'Versement mensuel',
@@ -439,7 +441,7 @@ const LABELS = {
     'lbl-s-expenses':'Expenses','lbl-cashflow':'Monthly Cash Flow',
     'lbl-cat-title':'Spending by Category','lbl-all-time':'all time',
     'lbl-fixed-var':'Fixed vs Variable','lbl-fixed':'Fixed','lbl-variable':'Variable',
-    'lbl-latest-exp':'Latest Expenses','lbl-this-month':'This Month',
+    'lbl-latest-exp':'Latest Expenses / Incomes','lbl-this-month':'This Month',
     'lbl-savings-title':'Monthly Savings & PEA Transfers','lbl-nw-hero':'Net Worth',
     'lbl-s-proj':'Projections',
     'lbl-proj-title':'PEA Projection — Interactive','lbl-sl-monthly':'Monthly contribution',
@@ -1050,28 +1052,41 @@ function drawCategories(txs) {
     </div>`).join('');
 }
 
+/** Income = type Income from wallet export, or positive amount (salary, reimbursements, etc.). */
+function isIncomeTx(t) {
+  return t.type === 'Income' || (+t.amount || 0) > 0;
+}
+function isExpenseTx(t) {
+  return !isIncomeTx(t) && t.category !== 'Month progress bar';
+}
+
 function renderExpenses(txs) {
-  const expenses = txs.filter(t => t.amount < 0).slice(0, 60);
-  document.getElementById('exp-count').textContent = expenses.length + ' ' + T('tx');
+  // Mixed feed: latest expenses + incomes (excl. progress-bar noise)
+  const rows = txs
+    .filter(t => t.category !== 'Month progress bar' && t.category !== 'Month progress bar compensation')
+    .slice(0, 60);
+  document.getElementById('exp-count').textContent = rows.length + ' ' + T('tx');
   const today = new Date().toDateString();
   const yesterday = new Date(Date.now() - 86400000).toDateString();
-  document.getElementById('expense-list').innerHTML = expenses.map(t => {
-    const icon    = CAT_ICONS[t.category] || '💸';
-    const color   = CAT_COLORS[t.category] || '#7a7f9a';
+  document.getElementById('expense-list').innerHTML = rows.map(t => {
+    const income  = isIncomeTx(t);
+    const icon    = income ? (CAT_ICONS[t.category] || '💰') : (CAT_ICONS[t.category] || '💸');
     const ds      = t.date.toDateString();
     const dateStr = ds === today ? T('today-str')
       : ds === yesterday ? T('yesterday')
       : t.date.toLocaleDateString(lang==='fr'?'fr-FR':'en-GB',{day:'numeric',month:'short'});
     const timeStr = t.date.toLocaleTimeString(lang==='fr'?'fr-FR':'en-GB',{hour:'2-digit',minute:'2-digit'});
-    const meta = t.memo ? t.memo : (t.category.length > 18 ? t.category.slice(0,16)+'…' : t.category);
+    const catLabel = t.category || (income ? (lang==='fr'?'Revenu':'Income') : (lang==='fr'?'Dépense':'Expense'));
+    const metaBits = [t.memo || null, timeStr, dateStr].filter(Boolean);
+    const sign = income ? '+' : '−';
     return `<div class="exp-item">
       <span class="exp-ico">${icon}</span>
       <div class="exp-info">
-        <div class="exp-cat">${t.category}</div>
-        <div class="exp-meta">${meta !== t.category ? meta : timeStr} · ${dateStr}</div>
+        <div class="exp-cat">${catLabel}${income ? ' · ' + (lang==='fr'?'revenu':'income') : ''}</div>
+        <div class="exp-meta">${metaBits.join(' · ')}</div>
       </div>
       <div class="exp-right">
-        <div class="exp-amt blur-val">-${fmt2(t.amount)}</div>
+        <div class="exp-amt ${income?'inc':'exp'} blur-val">${sign}${fmt2(t.amount)}</div>
       </div>
     </div>`;
   }).join('');
@@ -1081,12 +1096,14 @@ function renderMonthSummary(txs) {
   const now = new Date();
   const curY = now.getFullYear(), curM = now.getMonth();
   const FIXED_CATS = ['Rent','Subscriptions','Gas & Electricity'];
-  const monthTxs  = txs.filter(t => t.date.getFullYear()===curY && t.date.getMonth()===curM);
-  const expenses   = monthTxs.filter(t => t.amount < 0);
-  const income     = monthTxs.filter(t => t.amount > 0);
+  const monthTxs  = txs.filter(t => t.date.getFullYear()===curY && t.date.getMonth()===curM
+    && t.category !== 'Month progress bar' && t.category !== 'Month progress bar compensation');
+  const expenses   = monthTxs.filter(isExpenseTx);
+  // All wallet incomes this month: salary, reimbursements, blank-named income cats, etc.
+  const income     = monthTxs.filter(isIncomeTx);
 
   const totalExp   = expenses.reduce((s,t) => s+Math.abs(t.amount), 0);
-  const totalInc   = income.reduce((s,t)   => s+t.amount, 0);
+  const totalInc   = income.reduce((s,t)   => s+Math.abs(+t.amount || 0), 0);
   const fixedExp   = expenses.filter(t => FIXED_CATS.includes(t.category)).reduce((s,t)=>s+Math.abs(t.amount),0);
   const varExp     = totalExp - fixedExp;
   const net        = totalInc - totalExp;
@@ -1117,11 +1134,12 @@ function renderMonthSummary(txs) {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
       <div style="background:var(--bg3);border-radius:8px;padding:10px">
         <div style="font-size:10px;color:var(--muted);margin-bottom:3px">${T('income')} 💰</div>
-        <div class="blur-val" style="font-size:16px;font-weight:700;color:var(--green)">${fmt(totalInc)}</div>
+        <div class="blur-val" style="font-size:16px;font-weight:700;color:var(--green)">${fmt2(totalInc)}</div>
+        <div style="font-size:9px;color:var(--muted);margin-top:2px">${income.length} ${lang==='fr'?'lignes':'entries'}</div>
       </div>
       <div style="background:var(--bg3);border-radius:8px;padding:10px">
         <div style="font-size:10px;color:var(--muted);margin-bottom:3px">${T('expenses')} 💸</div>
-        <div class="blur-val" style="font-size:16px;font-weight:700;color:var(--red)">${fmt(totalExp)}</div>
+        <div class="blur-val" style="font-size:16px;font-weight:700;color:var(--red)">${fmt2(totalExp)}</div>
       </div>
       <div style="background:var(--bg3);border-radius:8px;padding:10px">
         <div style="font-size:10px;color:var(--muted);margin-bottom:3px">Net 📊</div>
