@@ -475,7 +475,9 @@ function fmt(v) { return '€' + Math.abs(Math.round(v)).toLocaleString('fr-FR')
 const STATE = {
   pea: 0, livretA: 0, pee: 0,
   monthlyNetIncome: 0,
-  peaMonthly: 700,
+  peaMonthly: 0,
+  peaMonthsActive: 0,
+  peaStartedAt: null,
   peaAlloc: [
     {name:'WPEA', pct:70, color:'#4a9eff', costBasis:0, shares:0, todayChg:0},
     {name:'PNAS', pct:20, color:'#f5a623', costBasis:0, shares:0, todayChg:0},
@@ -485,6 +487,7 @@ const STATE = {
   transactions: [],
   savingsData: [],
   finaryOk: false, driveOk: false, savingsOk: false,
+  balancesSource: null,
   balanceDate: null, lastSnapshotSync: null,
 };
 
@@ -516,33 +519,54 @@ function loadBalancesFromStorage() {
   try {
     const b = JSON.parse(localStorage.getItem(LS_BALANCES) || 'null');
     if (!b) return;
-    if (b.pea != null) STATE.pea = +b.pea;
-    if (b.livretA != null) STATE.livretA = +b.livretA;
-    if (b.pee != null) STATE.pee = +b.pee;
-    if (b.costBasis != null) STATE.monthlyCostBasis = +b.costBasis;
-    if (b.monthlyNetIncome != null) STATE.monthlyNetIncome = +b.monthlyNetIncome;
-    if (b.peaMonthly != null) STATE.peaMonthly = +b.peaMonthly;
-    if (b.peaAlloc && Array.isArray(b.peaAlloc)) STATE.peaAlloc = b.peaAlloc;
-    STATE.balanceDate = b.date || null;
-    STATE.finaryOk = !!(b.pea || b.livretA);
+    applyBalancesPayload(b, { persist: false });
   } catch (e) { console.warn('localStorage:', e); }
 }
 
-function saveBalancesToStorage(pea, livretA, pee, costBasis, monthlyNetIncome, peaMonthly) {
+/** Persist PEE + current Finary-derived balances (never requires typing PEA/Livret). */
+function persistBalancesState() {
   try {
     const vals = {
-      pea: +pea, livretA: +livretA, pee: +pee, costBasis: +costBasis,
-      monthlyNetIncome: +monthlyNetIncome, peaMonthly: +peaMonthly,
+      pea: STATE.pea, livretA: STATE.livretA, pee: STATE.pee,
+      costBasis: STATE.monthlyCostBasis,
+      monthlyNetIncome: STATE.monthlyNetIncome,
+      peaMonthly: STATE.peaMonthly,
+      peaMonthsActive: STATE.peaMonthsActive || undefined,
+      peaStartedAt: STATE.peaStartedAt || undefined,
       peaAlloc: STATE.peaAlloc,
-      date: new Date().toISOString(),
+      date: STATE.balanceDate || new Date().toISOString(),
+      source: STATE.balancesSource || (STATE.finaryOk ? 'finary' : 'manual'),
     };
     localStorage.setItem(LS_BALANCES, JSON.stringify(vals));
-    STATE.pea = vals.pea; STATE.livretA = vals.livretA;
-    STATE.pee = vals.pee; STATE.monthlyCostBasis = vals.costBasis;
-    STATE.monthlyNetIncome = vals.monthlyNetIncome;
-    STATE.peaMonthly = vals.peaMonthly;
-    STATE.finaryOk = true; STATE.balanceDate = vals.date;
   } catch (e) { console.warn('localStorage write:', e); }
+}
+
+/** Monthly PEA contribution from Finary cost basis (no settings field). */
+function derivePeaMonthlyFromFinary() {
+  const cb = STATE.monthlyCostBasis;
+  if (!(cb > 0)) return;
+  // Prefer explicit months from sync payload; else infer from cost basis (~€600–700 DCA band).
+  let months = STATE.peaMonthsActive > 0 ? STATE.peaMonthsActive : 0;
+  if (!months && STATE.peaStartedAt) {
+    const start = new Date(STATE.peaStartedAt);
+    if (!isNaN(+start)) {
+      const now = new Date();
+      months = Math.max(1, (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth()) + 1);
+    }
+  }
+  if (!months) {
+    const ytd = new Date().getMonth() + 1;
+    const hint = Math.round(cb / 700);
+    months = Math.max(ytd, hint || 1);
+  }
+  STATE.peaMonthly = Math.max(0, Math.round(cb / months));
+  const sl = document.getElementById('sl-monthly');
+  if (sl && STATE.peaMonthly > 0) {
+    const clamped = Math.min(+sl.max, Math.max(+sl.min, STATE.peaMonthly));
+    // Snap to slider step
+    const step = +sl.step || 50;
+    sl.value = String(Math.round(clamped / step) * step);
+  }
 }
 
 function applyBalancesPayload(b, { persist = true } = {}) {
@@ -552,25 +576,17 @@ function applyBalancesPayload(b, { persist = true } = {}) {
   if (b.pee != null) STATE.pee = +b.pee;
   if (b.costBasis != null) STATE.monthlyCostBasis = +b.costBasis;
   if (b.monthlyNetIncome != null) STATE.monthlyNetIncome = +b.monthlyNetIncome;
-  if (b.peaMonthly != null) STATE.peaMonthly = +b.peaMonthly;
   if (Array.isArray(b.peaAlloc) && b.peaAlloc.length) STATE.peaAlloc = b.peaAlloc;
+  if (b.peaMonthsActive != null) STATE.peaMonthsActive = +b.peaMonthsActive;
+  if (b.peaStartedAt) STATE.peaStartedAt = b.peaStartedAt;
   STATE.balanceDate = b.updatedAt || b.date || new Date().toISOString();
   STATE.finaryOk = !!(STATE.pea || STATE.livretA);
-  STATE.balancesSource = b.source || 'snapshot';
-  if (persist) {
-    try {
-      const vals = {
-        pea: STATE.pea, livretA: STATE.livretA, pee: STATE.pee,
-        costBasis: STATE.monthlyCostBasis,
-        monthlyNetIncome: STATE.monthlyNetIncome,
-        peaMonthly: STATE.peaMonthly,
-        peaAlloc: STATE.peaAlloc,
-        date: STATE.balanceDate,
-        source: STATE.balancesSource,
-      };
-      localStorage.setItem(LS_BALANCES, JSON.stringify(vals));
-    } catch (e) { console.warn('localStorage write:', e); }
-  }
+  // Any payload with PEA/Livret is treated as Finary-backed (manual entry removed).
+  STATE.balancesSource = (b.source === 'finary' || STATE.finaryOk) ? 'finary' : (b.source || 'snapshot');
+  // Explicit peaMonthly from sync wins; otherwise derive from cost basis.
+  if (b.peaMonthly != null && +b.peaMonthly > 0) STATE.peaMonthly = +b.peaMonthly;
+  else derivePeaMonthlyFromFinary();
+  if (persist) persistBalancesState();
   return true;
 }
 
@@ -596,9 +612,10 @@ async function fetchTransactions() {
 
 function deriveSavingsFromTransactions(txs) {
   // Core metric: monthly net = income − expenses from wallet snapshot.
-  // PEA contribution is a configurable monthly target (default €700).
+  // PEA contribution is derived from Finary cost basis (see derivePeaMonthlyFromFinary).
   // Cash delta = net − PEA (positive = cash saved beyond PEA).
-  const peaMo = STATE.peaMonthly > 0 ? STATE.peaMonthly : 700;
+  if (!(STATE.peaMonthly > 0) && STATE.monthlyCostBasis > 0) derivePeaMonthlyFromFinary();
+  const peaMo = STATE.peaMonthly > 0 ? STATE.peaMonthly : 0;
   const monthly = {};
   txs.forEach(t => {
     const k = t.date.getFullYear() + '-' + String(t.date.getMonth() + 1).padStart(2, '0');
@@ -630,21 +647,18 @@ async function fetchSavings() {
 }
 
 function showBalanceModal() {
-  const fromFinary = STATE.balancesSource === 'finary' && (STATE.pea || STATE.livretA);
+  const hasFinary = !!(STATE.pea || STATE.livretA);
   const auto = document.getElementById('modal-auto-block');
-  const manual = document.getElementById('modal-manual-finary');
-  if (auto) auto.style.display = fromFinary ? 'block' : 'none';
-  if (manual) manual.style.display = fromFinary ? 'none' : 'block';
-  if (fromFinary) {
+  const waiting = document.getElementById('modal-finary-waiting');
+  if (auto) auto.style.display = hasFinary ? 'block' : 'none';
+  if (waiting) waiting.style.display = hasFinary ? 'none' : 'block';
+  if (hasFinary) {
+    const peaMo = STATE.peaMonthly > 0 ? STATE.peaMonthly : 0;
     document.getElementById('modal-auto-summary').textContent =
-      `PEA ${fmt(STATE.pea)} · Livret A ${fmt(STATE.livretA)} · cost basis ${fmt(STATE.monthlyCostBasis)}`;
-  } else {
-    document.getElementById('modal-pea').value = STATE.pea || '';
-    document.getElementById('modal-livreta').value = STATE.livretA || '';
-    document.getElementById('modal-costbasis').value = STATE.monthlyCostBasis || '';
+      `PEA ${fmt(STATE.pea)} · Livret A ${fmt(STATE.livretA)} · cost basis ${fmt(STATE.monthlyCostBasis)}` +
+      (peaMo ? ` · ~${fmt(peaMo)}/mo PEA` : '');
   }
   document.getElementById('modal-pee').value = STATE.pee || '';
-  document.getElementById('modal-pea-monthly').value = STATE.peaMonthly || 700;
   const gEl = document.getElementById('modal-gemini');
   if (gEl) gEl.value = localStorage.getItem(LS_GEMINI) || '';
   const eEl = document.getElementById('modal-export-url');
@@ -653,21 +667,17 @@ function showBalanceModal() {
 }
 function hideBalanceModal() { document.getElementById('modal-overlay').style.display = 'none'; }
 function saveBalancesFromModal() {
-  const fromFinary = STATE.balancesSource === 'finary' && (STATE.pea || STATE.livretA);
-  const pea = fromFinary ? STATE.pea : document.getElementById('modal-pea').value;
-  const la = fromFinary ? STATE.livretA : document.getElementById('modal-livreta').value;
-  const cb = fromFinary ? STATE.monthlyCostBasis : document.getElementById('modal-costbasis').value;
+  // Only manual field: PEE. PEA / Livret / cost / monthly PEA come from Finary.
   const pee = document.getElementById('modal-pee').value;
-  const peaM = document.getElementById('modal-pea-monthly').value;
   const gemini = (document.getElementById('modal-gemini')?.value || '').trim();
   const exportUrl = (document.getElementById('modal-export-url')?.value || '').trim();
-  if (!fromFinary && (pea === '' || la === '')) return;
   if (gemini) localStorage.setItem(LS_GEMINI, gemini);
+  else localStorage.removeItem(LS_GEMINI);
   if (exportUrl) localStorage.setItem(LS_EXPORT_URL, exportUrl);
   else localStorage.removeItem(LS_EXPORT_URL);
-  saveBalancesToStorage(pea || 0, la || 0, pee || STATE.pee || 0, cb || 0, STATE.monthlyNetIncome || 0, peaM || 700);
-  // Keep Finary as source of truth for PEA/Livret when present
-  if (fromFinary) STATE.balancesSource = 'finary';
+  if (pee !== '') STATE.pee = +pee;
+  if (STATE.pea || STATE.livretA) STATE.balancesSource = 'finary';
+  persistBalancesState();
   hideBalanceModal();
   STATE.savingsData = deriveSavingsFromTransactions(STATE.transactions);
   renderAll(STATE.transactions);
@@ -1474,39 +1484,23 @@ function initDragAndDrop() {
 }
 </script>
 
-<!-- Settings modal: PEE + savings prefs. PEA/Livret/cost come from Finary when synced. -->
+<!-- Settings: PEE + keys only. PEA/Livret/cost/monthly PEA are Finary-derived. -->
 <div id="modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
   <div style="background:#13161e;border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:24px;width:360px;max-width:92vw;max-height:90vh;overflow:auto">
     <div style="font-size:16px;font-weight:700;margin-bottom:4px">⚙️ Settings</div>
     <div style="font-size:12px;color:#7a7f9a;margin-bottom:14px;line-height:1.45">
-      PEA / Livret A / cost basis sync from Finary via Drive.
-      Only extras with no connector stay manual.
+      PEA, Livret A, cost basis and monthly PEA contribution come from Finary (via the Drive snapshot). Only PEE is manual.
     </div>
     <div id="modal-auto-block" style="display:none;margin-bottom:14px;padding:10px 12px;background:#1a1e2a;border-radius:8px;border:1px solid rgba(46,204,143,.25)">
       <div style="font-size:10px;color:#2ecc8f;font-weight:600;letter-spacing:.5px;margin-bottom:4px">FROM FINARY</div>
       <div id="modal-auto-summary" style="font-size:12px;color:#f0f2f7"></div>
     </div>
-    <div id="modal-manual-finary" style="display:none">
-      <div style="margin-bottom:12px">
-        <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">PEA €</label>
-        <input id="modal-pea" type="number" step="0.01" style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:#f0f2f7;font-size:13px">
-      </div>
-      <div style="margin-bottom:12px">
-        <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">Livret A €</label>
-        <input id="modal-livreta" type="number" step="0.01" style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:#f0f2f7;font-size:13px">
-      </div>
-      <div style="margin-bottom:12px">
-        <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">PEA cost basis €</label>
-        <input id="modal-costbasis" type="number" step="0.01" style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:#f0f2f7;font-size:13px">
-      </div>
+    <div id="modal-finary-waiting" style="display:none;margin-bottom:14px;padding:10px 12px;background:#1a1e2a;border-radius:8px;border:1px solid rgba(245,166,35,.3)">
+      <div style="font-size:12px;color:#f5a623;line-height:1.45">No Finary balances in the snapshot yet. Ask Cursor to sync Finary, run Apps Script <code>runNow</code>, then Refresh.</div>
     </div>
     <div style="margin-bottom:12px">
       <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">PEE (Epsor) € — no connector</label>
       <input id="modal-pee" type="number" step="0.01" style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:#f0f2f7;font-size:13px">
-    </div>
-    <div style="margin-bottom:12px">
-      <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px" id="lbl-pea-monthly">Monthly PEA contribution € (default 700)</label>
-      <input id="modal-pea-monthly" type="number" step="50" style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:#f0f2f7;font-size:13px">
     </div>
     <div style="margin-bottom:12px">
       <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">Gemini API key (browser only — for AI summary)</label>
@@ -1518,8 +1512,8 @@ function initDragAndDrop() {
     </div>
     <input id="modal-income" type="hidden" value="">
     <div style="display:flex;gap:8px">
-      <button onclick="saveBalancesFromModal()" style="flex:1;background:#4a9eff;color:#fff;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:600;cursor:pointer">Save</button>
-      <button onclick="hideBalanceModal()" style="flex:1;background:#1a1e2a;color:#7a7f9a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;font-size:13px;cursor:pointer">Cancel</button>
+      <button type="button" onclick="saveBalancesFromModal()" style="flex:1;background:#4a9eff;color:#fff;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:600;cursor:pointer">Save</button>
+      <button type="button" onclick="hideBalanceModal()" style="flex:1;background:#1a1e2a;color:#7a7f9a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;font-size:13px;cursor:pointer">Cancel</button>
     </div>
   </div>
 </div>
