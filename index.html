@@ -590,14 +590,19 @@ function applyBalancesPayload(b, { persist = true } = {}) {
   return true;
 }
 
+function snapshotDownloadUrl(fileId) {
+  // drive.google.com/uc blocks browser Origin (403). usercontent allows CORS (*).
+  return `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=download&confirm=t`;
+}
+
 async function fetchTransactions() {
   const fileId = getSnapshotFileId();
   if (!fileId) { STATE.driveOk = false; return; }
   try {
-    const url = `https://drive.google.com/uc?export=download&id=${encodeURIComponent(fileId)}`;
-    const res = await fetch(url);
+    const res = await fetch(snapshotDownloadUrl(fileId), { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
+    if (!data || !Array.isArray(data.transactions)) throw new Error('Invalid snapshot JSON');
     STATE.transactions = (data.transactions || []).map(t => ({
       date: new Date(t.date), type: t.type, category: t.category,
       amount: parseFloat(t.amount), memo: t.memo || '',
@@ -607,7 +612,11 @@ async function fetchTransactions() {
     STATE.lastSnapshotSync = data.lastSync;
     // Prefer live balances baked into the snapshot (from Finary → Drive sync)
     if (data.balances) applyBalancesPayload(data.balances);
-  } catch (e) { console.warn('Snapshot fetch:', e.message); STATE.driveOk = false; }
+  } catch (e) {
+    console.warn('Snapshot fetch:', e.message);
+    STATE.driveOk = false;
+    STATE.finaryOk = !!(STATE.pea || STATE.livretA);
+  }
 }
 
 function deriveSavingsFromTransactions(txs) {
@@ -1523,11 +1532,12 @@ function initDragAndDrop() {
   <div style="background:#13161e;border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:24px;width:400px;max-width:92vw">
     <div style="font-size:16px;font-weight:700;margin-bottom:4px">⚙️ Data source</div>
     <div style="font-size:12px;color:#7a7f9a;margin-bottom:14px;line-height:1.45">
-      Paste your Drive <b>wallet-snapshot.json</b> file ID (from Apps Script <code>_meta!A1</code>). Red Drive/Finary pills usually mean this ID is missing.
+      Paste your Drive <b>wallet-snapshot.json</b> file ID (Apps Script <code>_meta!A1</code>, or the ID in the Drive file link).
+      Red Drive / Finary / Wallet pills mean this ID is missing or wrong — Save & load here, then Refresh.
       Stored in this browser only — <b>not</b> in the public GitHub repo.
     </div>
     <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">Snapshot file ID</label>
-    <input id="modal-snapshot-id" type="text" placeholder="Drive file id" autocomplete="off"
+    <input id="modal-snapshot-id" type="text" placeholder="e.g. 1UDN5c6JoKWzCpiwSMZcbVKipFnwzR-az" autocomplete="off"
       style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:#f0f2f7;font-size:13px;margin-bottom:16px">
     <div style="display:flex;gap:8px">
       <button onclick="saveSnapshotFromModal()" style="flex:1;background:#4a9eff;color:#fff;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:600;cursor:pointer">Save & load</button>
