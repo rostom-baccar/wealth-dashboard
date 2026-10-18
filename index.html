@@ -790,36 +790,17 @@ async function fetchTransactions() {
     STATE.snapshotFetchError = 'Locked — enter passphrase';
     return;
   }
-  const errors = [];
-
-  // Primary: encrypted vault on this site (public URL, private contents)
   try {
     const bundle = await fetchEncryptedSnapshot();
     const data = await decryptVaultBundle(bundle, vaultPass);
     applySnapshotData(data);
     STATE.snapshotSource = 'vault';
-    return;
   } catch (e) {
-    errors.push('vault: ' + e.message);
+    console.warn('Vault fetch failed', e.message);
+    STATE.driveOk = false;
+    STATE.finaryOk = !!(STATE.pea || STATE.livretA);
+    STATE.snapshotFetchError = 'vault: ' + e.message;
   }
-
-  // Optional live rebuild via Apps Script (treat URL as secret — returns plaintext)
-  const exportUrl = (localStorage.getItem(LS_EXPORT_URL) || '').trim();
-  if (exportUrl) {
-    try {
-      const base = exportUrl.split('?')[0];
-      const data = await fetchSnapshotJson(base + '?read=1&t=' + Date.now());
-      applySnapshotData(data);
-      STATE.snapshotSource = 'webapp';
-      return;
-    } catch (e) {
-      errors.push('webapp: ' + e.message);
-    }
-  }
-
-  STATE.driveOk = false;
-  STATE.finaryOk = !!(STATE.pea || STATE.livretA);
-  STATE.snapshotFetchError = errors.join(' · ');
 }
 
 function deriveSavingsFromTransactions(txs) {
@@ -1768,20 +1749,9 @@ async function refreshAll() {
   btn.classList.add('refreshing'); icon.className = 'spin'; icon.textContent = '↻';
   document.getElementById('status-bar').innerHTML = `<span class="pill pill-load">${T('fetching')}</span>`;
 
-  // Optional: Apps Script rebuild (URL is a secret — keep it out of the public repo)
-  const exportUrl = (localStorage.getItem(LS_EXPORT_URL) || '').trim();
-  if (exportUrl) {
-    try {
-      const base = exportUrl.split('?')[0];
-      const data = await fetchSnapshotJson(base + '?t=' + Date.now());
-      applySnapshotData(data);
-      STATE.snapshotSource = 'webapp-rebuild';
-    } catch (e) {
-      console.warn('Web app rebuild failed:', e.message);
-      STATE.driveOk = false;
-    }
-  }
-  if (!STATE.driveOk) await fetchTransactions();
+  // Fast path: re-fetch + decrypt vault only (no Apps Script — that was the slow/flaky path)
+  STATE.driveOk = false;
+  await fetchTransactions();
   await fetchSavings();
   renderAll(STATE.transactions);
   btn.classList.remove('refreshing'); icon.className = ''; icon.textContent = '↻';
@@ -1884,8 +1854,8 @@ function initDragAndDrop() {
       <input id="modal-gemini" type="password" autocomplete="off" placeholder="AIza… or AQ.…" style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:#f0f2f7;font-size:13px">
     </div>
     <div style="margin-bottom:20px">
-      <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">Apps Script web app URL (Refresh → rebuild snapshot)</label>
-      <input id="modal-export-url" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec" style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:#f0f2f7;font-size:12px">
+      <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">Apps Script web app URL (optional, unused by Refresh)</label>
+      <input id="modal-export-url" type="url" autocomplete="off" placeholder="optional — leave empty" style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:#f0f2f7;font-size:12px">
     </div>
     <input id="modal-income" type="hidden" value="">
     <div style="display:flex;gap:8px">

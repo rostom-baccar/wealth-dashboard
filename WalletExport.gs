@@ -1,9 +1,7 @@
 // ================================================================
 // WALLET EXPORT v2 — Pure Server-Side Apps Script
-// - Hourly auto-trigger (unchanged from v1)
-// - Manual trigger button in the sheet
-// - NEW: also exports a JSON snapshot to Drive for the standalone
-//   dashboard to read without needing MCP or Claude
+// - Manual only (runNow / sheet menu) — no hourly/daily triggers
+// - Exports Sheet + wallet-snapshot.json on Drive (for encrypt → Pages)
 // ================================================================
 
 const SQLITE_FOLDER_ID = '1npXyzRNG1e41XoQ6v5wfTq78UT1hn-L_';
@@ -14,7 +12,7 @@ const JSON_FILE_NAME     = 'wallet-snapshot.json'; // written alongside wallet-d
 const BALANCES_FILE_NAME = 'finary-balances.json'; // optional; merged into snapshot if present
 
 // ================================================================
-// ENTRY POINT — hourly trigger + manual button both call this
+// ENTRY POINT — manual only (menu, runNow, or optional web app)
 // ================================================================
 function exportWalletToSheet() {
   try {
@@ -200,54 +198,36 @@ function manualRefresh() {
 }
 
 // ================================================================
-// TRIGGER INSTALLER — run ONCE manually, then never again
-// Installs both: hourly auto-trigger + keeps manual button working
+// TRIGGERS — manual only. Run removeAutoTriggers() once to clear
+// any old hourly/daily installs.
 // ================================================================
+function removeAutoTriggers() {
+  const triggers = ScriptApp.getProjectTriggers();
+  let n = 0;
+  triggers.forEach(t => {
+    ScriptApp.deleteTrigger(t);
+    n++;
+  });
+  Logger.log('Removed ' + n + ' trigger(s). Export is manual-only now (runNow / menu).');
+}
+
+/** @deprecated Use removeAutoTriggers — hourly schedule removed. */
 function installHourlyTrigger() {
-  ScriptApp.getProjectTriggers()
-    .filter(t => t.getHandlerFunction() === 'exportWalletToSheet')
-    .forEach(t => ScriptApp.deleteTrigger(t));
+  removeAutoTriggers();
+  Logger.log('No auto schedule installed. Use runNow() or the Wallet menu.');
+}
 
-  ScriptApp.newTrigger('exportWalletToSheet')
-    .timeBased()
-    .everyHours(1)
-    .create();
-
-  Logger.log('Hourly trigger installed.');
-  Logger.log('Manual trigger: draw a button in the sheet and assign it to manualRefresh()');
+/** Sheet menu: Wallet → Export now */
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('Wallet')
+    .addItem('Export now (manual)', 'manualRefresh')
+    .addItem('Remove auto triggers', 'removeAutoTriggers')
+    .addToUi();
 }
 
 // ================================================================
-// ADD MANUAL BUTTON TO SHEET — run once to insert the button
-// ================================================================
-function addManualButton() {
-  const ss    = SpreadsheetApp.openById(SHEET_ID);
-  const sheet = ss.getSheets()[0]; // first sheet
-
-  // Insert a drawing (button) and assign manualRefresh to it
-  // Note: Apps Script can't directly create styled buttons, but we
-  // can create a simple text box that looks like one
-  const drawing = sheet.newChart()
-    .setChartType(Charts.ChartType.BAR) // placeholder; we use insertImage workaround
-    .build();
-
-  // Better: use a cell with background as button — users click via a menu item
-  let metaSheet = ss.getSheetByName('_meta');
-  if (!metaSheet) metaSheet = ss.insertSheet('_meta');
-
-  metaSheet.getRange('D1').setValue('🔄 Manual Refresh')
-    .setBackground('#4a9eff')
-    .setFontColor('#ffffff')
-    .setFontWeight('bold')
-    .setHorizontalAlignment('center');
-  metaSheet.setColumnWidth(4, 160);
-
-  Logger.log('Button cell added at _meta!D1.');
-  Logger.log('To make it clickable: Insert > Drawing, draw a button, assign script: manualRefresh');
-}
-
-// ================================================================
-// TEST — run this any time to force a fresh export
+// MANUAL — run this any time to force a fresh export
 // ================================================================
 function runNow() { exportWalletToSheet(); }
 
@@ -430,9 +410,9 @@ function buildLookup(rows, keyCol, valCol) {
 
 
 // ================================================================
-// WEB APP — deploy as "Execute as: Me", "Who has access: Anyone"
-// Dashboard calls this URL to rebuild + receive the snapshot JSON.
-// Browser cannot read Drive directly (CORS/CORP), so we return it here.
+// WEB APP (optional) — prefer manual runNow + encrypt to Pages.
+// Full snapshot JSON is ~350KB and often fails ContentService /
+// times out (30–90s SQLite parse). Kept for rare debugging only.
 // ================================================================
 function doGet(e) {
   try {
@@ -445,10 +425,14 @@ function doGet(e) {
     if (!snapshot) {
       return jsonOutput_({ ok: false, error: 'No wallet-snapshot.json found after export' });
     }
-    // Include ok flag; dashboard accepts either bare snapshot or {ok, ...snapshot}
-    snapshot.ok = true;
-    snapshot.servedAt = new Date().toISOString();
-    return jsonOutput_(snapshot);
+    // Return a tiny ack — do not stream full snapshot (too large / slow)
+    return jsonOutput_({
+      ok: true,
+      servedAt: new Date().toISOString(),
+      lastSync: snapshot.lastSync || null,
+      txCount: (snapshot.transactions || []).length,
+      note: 'Export done. Dashboard reads encrypted Pages vault, not this response.',
+    });
   } catch (err) {
     return jsonOutput_({ ok: false, error: String(err && err.message || err) });
   }
