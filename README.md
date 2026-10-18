@@ -1,73 +1,58 @@
 # Rostom · Wealth Dashboard
 
-Personal finance dashboard on GitHub Pages. **No balances or Drive file IDs are stored in this repo.**
+Personal finance dashboard on GitHub Pages.
 
-Live (after Pages enable): https://rostom-baccar.github.io/wealth-dashboard/
+Live: https://rostom-baccar.github.io/wealth-dashboard/
 
-## Security model
+## Security model (public site, private numbers)
 
-| Secret | Where it lives |
-|--------|----------------|
-| PEA / Livret A / PEE amounts | Your browser `localStorage` only |
-| Drive `wallet-snapshot.json` file ID | Your browser `localStorage` only (⚙️ Data) |
-| Transaction history | Google Drive file you control |
+The HTML is public. **Your numbers are not** — they ship as an AES-256-GCM encrypted blob:
 
-The public GitHub repo contains **only** the HTML/JS shell (allocation *percentages* as structure, zeroed money defaults).
+| File | Public? |
+|------|---------|
+| `index.html` | Yes (shell only) |
+| `data/wallet-snapshot.enc` | Yes (ciphertext only) |
+| `data/wallet-snapshot.json` | **No** — gitignored, local only |
+| `.dashboard-pass` | **No** — gitignored passphrase |
 
-### Important about “anyone with the link”
+**Unlock:** enter your passphrase once. Optionally **Remember this device** stores the decryption key in that browser’s `localStorage` only (not the passphrase string in transit after unlock). **Lock** clears it.
 
-If your Drive snapshot is shared as **anyone with the link**, then **anyone who learns the file ID can read it**. Hiding the URL is not encryption.
+Other people opening the site see the unlock screen. Fetching `.enc` without the passphrase yields unreadable data.
 
-- Do **not** paste the file ID into issues, commits, or screenshots.
-- Prefer keeping the snapshot link private to you; enter it once in the dashboard (stored locally).
-- For stronger security later: stop public sharing and put a tiny authenticated proxy in front of Drive.
+### Re-encrypt after syncing new data
+
+```bash
+# plaintext lives locally only
+# edit/sync → data/wallet-snapshot.json
+DASHBOARD_PASS="$(cat .dashboard-pass)" node tools/encrypt-snapshot.mjs
+git add data/wallet-snapshot.enc && git commit -m "Refresh encrypted snapshot" && git push
+```
+
+### Caveats
+
+- **Git history** may still contain older plaintext commits from before encryption — treat the passphrase as rotating privacy going forward; rewrite history only if you need to scrub the past.
+- An Apps Script `/exec` URL that returns plaintext is also a secret — don’t publish it.
+- Anon mode only blurs the UI; encryption is what protects the network download.
 
 ## Architecture
 
 ```
-wallet app → Drive (wallet-database)
-     → Apps Script (hourly) → wallet-snapshot.json
-     → dashboard Refresh → fetch JSON (file ID from localStorage)
-Balances modal → localStorage (PEA / Livret A / PEE / net income)
+wallet app → Drive sqlite
+  → Apps Script → local wallet-snapshot.json (+ Finary merge)
+  → tools/encrypt-snapshot.mjs → wallet-snapshot.enc (GitHub Pages)
+  → browser unlock → decrypt → dashboard
 ```
 
 ## Setup
 
-1. Install `WalletExport.gs` in your Google Sheet, run `installHourlyTrigger`, then `runNow`.
-2. Copy the snapshot file ID from `_meta!A1`.
-3. Open the dashboard → **⚙️ Data** → paste file ID → Save.
-4. **💰 Balances** → enter PEA / Livret A / PEE / monthly net income / PEA contribution.
+1. Install `WalletExport.gs`, run `runNow`.
+2. Keep a local `data/wallet-snapshot.json` (or ask Cursor to sync).
+3. Encrypt with `.dashboard-pass` / `tools/encrypt-snapshot.mjs`.
+4. Open the site → unlock with the passphrase → optional Remember this device.
 
 ## Features
 
-- Net worth hero, EN default, strong anon blur
-- Savings chart derived from wallet spend + your net-income setting (vertical bars + PEA contribution)
-- Draggable sections (order saved in localStorage)
-- Refresh pulls the latest Drive snapshot
-
-## Files
-
-| File | Purpose |
-|------|---------|
-| `index.html` | Dashboard UI |
-| `WalletExport.gs` | Apps Script → Sheet + JSON snapshot |
-
-## Finary balances (Cursor → Drive → dashboard)
-
-Finary MCP works in Cursor (use Safari for OAuth if Chrome hangs). Live balances are written to Drive as `finary-balances.json` next to your wallet files. Apps Script merges that file into `wallet-snapshot.json` on each export so **Refresh** on the dashboard picks up PEA / Livret A / ETF allocation without typing them in.
-
-1. In Cursor: ask to "sync Finary balances to Drive" (or recreate `finary-balances.json`).
-2. In the Sheet: Extensions → Apps Script → paste latest `WalletExport.gs` → run `runNow` once.
-3. Snapshot file ID in `_meta!A1` should stay **stable** (script updates in place). Paste it once under **⚙️ Data**.
-
-PEE is not in Finary yet — set it via **💰 Balances** if needed.
-
-## Refresh button
-
-1. (Optional) Deploy `WalletExport.gs` as a **Web app** (Execute as Me, Anyone) and paste the `/exec` URL in dashboard **Settings**. Refresh then triggers a live rebuild of `wallet-snapshot.json`.
-2. Refresh always re-fetches the Drive snapshot (wallet txs + merged Finary balances).
-3. Live Finary from the public page is not possible (no browser Finary API). Balances come from `finary-balances.json` merged by Apps Script — sync via Cursor when you want fresher PEA/Livret numbers.
-
-## Gemini AI summary
-
-Paste your Gemini API key in **Settings** (stored in `localStorage` only — never in this repo). Uses `gemini-2.0-flash`. Without a key, a local template brief is shown.
+- Encrypted vault unlock (per-device remember)
+- Net worth hero, Anon blur, EN/FR
+- Savings from wallet income − expenses; PEA monthly from Finary cost basis
+- Gemini AI brief (API key in Settings / localStorage only)

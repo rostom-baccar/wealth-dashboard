@@ -1,0 +1,7 @@
+# Plaintext finances — never publish
+data/wallet-snapshot.json
+.dashboard-pass
+.env
+.env.*
+*.pem
+.DS_Store

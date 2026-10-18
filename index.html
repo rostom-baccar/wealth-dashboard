@@ -243,7 +243,7 @@ body.anon .nw-amount{
       <span id="anon-lbl">Anon</span>
     </label>
     <button class="btn" onclick="showBalanceModal()" style="font-size:11px" id="btn-balances" title="PEE + savings settings (PEA/Livret come from Finary)">⚙️ Settings</button>
-    <button class="btn" onclick="showSnapshotModal()" style="font-size:11px" id="btn-snapshot" title="Configure Drive snapshot">⚙️ Data</button>
+    <button class="btn" onclick="lockVault()" style="font-size:11px" id="btn-lock" title="Lock vault on this device">🔒 Lock</button>
     <button class="btn btn-primary" id="refresh-btn" onclick="refreshAll()">
       <span id="refresh-icon">↻</span> <span id="lbl-refresh">Refresh</span>
     </button>
@@ -537,6 +537,11 @@ const LS_SNAPSHOT = 'wallet_snapshot_file_id';
 const LS_BALANCES = 'wallet_balances';
 const LS_GEMINI = 'gemini_api_key';
 const LS_EXPORT_URL = 'wallet_export_webapp_url';
+const LS_VAULT_PASS = 'dashboard_vault_pass'; // passphrase remembered on this browser only
+const ENC_SNAPSHOT_URL = './data/wallet-snapshot.enc';
+
+let vaultPass = null; // passphrase while unlocked (needed to open re-encrypted files)
+let vaultUnlocked = false;
 
 function getSnapshotFileId() {
   return (localStorage.getItem(LS_SNAPSHOT) || '').trim();
@@ -627,6 +632,132 @@ function snapshotDownloadUrl(fileId) {
   return `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=download&confirm=t`;
 }
 
+// ═══════════════════════════════════════════════════════
+// Vault — AES-GCM encrypted snapshot (public site, private numbers)
+// ═══════════════════════════════════════════════════════
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function bytesToB64(bytes) {
+  let s = '';
+  bytes.forEach(b => { s += String.fromCharCode(b); });
+  return btoa(s);
+}
+
+async function deriveVaultKey(passphrase, salt, iterations) {
+  const enc = new TextEncoder();
+  const baseKey = await crypto.subtle.importKey('raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    true,
+    ['decrypt', 'encrypt']
+  );
+}
+
+async function decryptVaultBundle(bundle, passphrase) {
+  if (!bundle || bundle.v !== 1 || !bundle.ct) throw new Error('Invalid vault file');
+  const salt = b64ToBytes(bundle.salt);
+  const iv = b64ToBytes(bundle.iv);
+  const tag = b64ToBytes(bundle.tag);
+  const ct = b64ToBytes(bundle.ct);
+  // WebCrypto expects ciphertext||tag for AES-GCM
+  const combined = new Uint8Array(ct.length + tag.length);
+  combined.set(ct, 0);
+  combined.set(tag, ct.length);
+  const key = await deriveVaultKey(passphrase, salt, bundle.iter || 250000);
+  const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, combined);
+  const text = new TextDecoder().decode(plainBuf);
+  return JSON.parse(text);
+}
+
+function lockVault() {
+  vaultPass = null;
+  vaultUnlocked = false;
+  localStorage.removeItem(LS_VAULT_PASS);
+  // legacy cleanup
+  localStorage.removeItem('dashboard_vault_jwk');
+  STATE.transactions = [];
+  STATE.driveOk = false;
+  STATE.finaryOk = false;
+  STATE.savingsOk = false;
+  showUnlockModal();
+  updateStatus();
+}
+
+async function fetchEncryptedSnapshot() {
+  const res = await fetch(ENC_SNAPSHOT_URL + '?t=' + Date.now(), { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+async function unlockWithPassphrase(passphrase, remember) {
+  const bundle = await fetchEncryptedSnapshot();
+  const data = await decryptVaultBundle(bundle, passphrase);
+  vaultPass = passphrase;
+  vaultUnlocked = true;
+  if (remember) localStorage.setItem(LS_VAULT_PASS, passphrase);
+  else localStorage.removeItem(LS_VAULT_PASS);
+  applySnapshotData(data);
+  STATE.snapshotSource = 'vault';
+  hideUnlockModal();
+  await fetchSavings();
+  renderAll(STATE.transactions);
+  generateAiSummary(STATE.transactions, false).catch(() => {});
+  return true;
+}
+
+async function tryUnlockFromDevice() {
+  const pass = localStorage.getItem(LS_VAULT_PASS);
+  if (!pass) return false;
+  try {
+    const bundle = await fetchEncryptedSnapshot();
+    const data = await decryptVaultBundle(bundle, pass);
+    vaultPass = pass;
+    vaultUnlocked = true;
+    applySnapshotData(data);
+    STATE.snapshotSource = 'vault-device';
+    return true;
+  } catch (e) {
+    console.warn('Device unlock failed — passphrase required:', e.message);
+    localStorage.removeItem(LS_VAULT_PASS);
+    return false;
+  }
+}
+
+function showUnlockModal(errMsg) {
+  const el = document.getElementById('unlock-overlay');
+  if (!el) return;
+  el.style.display = 'flex';
+  const err = document.getElementById('unlock-error');
+  if (err) err.textContent = errMsg || '';
+  const input = document.getElementById('unlock-pass');
+  if (input) { input.value = ''; setTimeout(() => input.focus(), 50); }
+}
+function hideUnlockModal() {
+  const el = document.getElementById('unlock-overlay');
+  if (el) el.style.display = 'none';
+}
+async function submitUnlock() {
+  const pass = (document.getElementById('unlock-pass')?.value || '').trim();
+  const remember = !!document.getElementById('unlock-remember')?.checked;
+  const err = document.getElementById('unlock-error');
+  const btn = document.getElementById('unlock-btn');
+  if (!pass) { if (err) err.textContent = 'Enter your passphrase'; return; }
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    await unlockWithPassphrase(pass, remember);
+  } catch (e) {
+    console.warn(e);
+    if (err) err.textContent = 'Wrong passphrase or corrupted vault file';
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Unlock'; }
+}
+
 function applySnapshotData(data) {
   if (!data || !Array.isArray(data.transactions)) throw new Error('Invalid snapshot JSON');
   STATE.transactions = data.transactions.map(t => ({
@@ -651,33 +782,35 @@ async function fetchSnapshotJson(url) {
 }
 
 async function fetchTransactions() {
+  if (!vaultUnlocked || !vaultPass) {
+    STATE.driveOk = false;
+    STATE.snapshotFetchError = 'Locked — enter passphrase';
+    return;
+  }
   const errors = [];
-  const sources = [];
 
-  // 1) Apps Script web app — can rebuild + return JSON (bypasses Drive CORS)
-  const exportUrl = (localStorage.getItem(LS_EXPORT_URL) || '').trim();
-  if (exportUrl) {
-    const base = exportUrl.split('?')[0];
-    sources.push({ name: 'webapp', url: base + '?read=1&t=' + Date.now() });
+  // Primary: encrypted vault on this site (public URL, private contents)
+  try {
+    const bundle = await fetchEncryptedSnapshot();
+    const data = await decryptVaultBundle(bundle, vaultPass);
+    applySnapshotData(data);
+    STATE.snapshotSource = 'vault';
+    return;
+  } catch (e) {
+    errors.push('vault: ' + e.message);
   }
 
-  // 2) Same-origin fallback shipped with the site (always CORS-safe)
-  sources.push({ name: 'pages', url: './data/wallet-snapshot.json?t=' + Date.now() });
-
-  // 3) Direct Drive file ID (often blocked in browser — best-effort)
-  const fileId = getSnapshotFileId();
-  if (fileId) sources.push({ name: 'drive', url: snapshotDownloadUrl(fileId) });
-
-  for (const src of sources) {
+  // Optional live rebuild via Apps Script (treat URL as secret — returns plaintext)
+  const exportUrl = (localStorage.getItem(LS_EXPORT_URL) || '').trim();
+  if (exportUrl) {
     try {
-      const data = await fetchSnapshotJson(src.url);
+      const base = exportUrl.split('?')[0];
+      const data = await fetchSnapshotJson(base + '?read=1&t=' + Date.now());
       applySnapshotData(data);
-      STATE.snapshotSource = src.name;
-      console.info('Snapshot loaded from', src.name);
+      STATE.snapshotSource = 'webapp';
       return;
     } catch (e) {
-      errors.push(src.name + ': ' + e.message);
-      console.warn('Snapshot source failed', src.name, e.message);
+      errors.push('webapp: ' + e.message);
     }
   }
 
@@ -759,21 +892,9 @@ function saveBalancesFromModal() {
   renderAll(STATE.transactions);
 }
 
-function showSnapshotModal() {
-  const overlay = document.getElementById('snapshot-overlay');
-  const input = document.getElementById('modal-snapshot-id');
-  if (!overlay || !input) { console.error('Snapshot modal missing from DOM'); alert('Data modal failed to load — hard-refresh the page (Cmd+Shift+R).'); return; }
-  overlay.style.display = 'flex';
-  input.value = getSnapshotFileId();
-}
-function hideSnapshotModal() { document.getElementById('snapshot-overlay').style.display = 'none'; }
-function saveSnapshotFromModal() {
-  const id = document.getElementById('modal-snapshot-id').value.trim();
-  if (!id) return;
-  setSnapshotFileId(id);
-  hideSnapshotModal();
-  refreshAll();
-}
+function showSnapshotModal() { /* legacy no-op — vault unlock replaced Data modal */ }
+function hideSnapshotModal() {}
+function saveSnapshotFromModal() {}
 
 
 // ═══════════════════════════════════════════════════════
@@ -1635,12 +1756,16 @@ function renderAll(txs) {
 // Main refresh
 // ═══════════════════════════════════════════════════════
 async function refreshAll() {
+  if (!vaultUnlocked) {
+    showUnlockModal();
+    return;
+  }
   const btn = document.getElementById('refresh-btn');
   const icon = document.getElementById('refresh-icon');
   btn.classList.add('refreshing'); icon.className = 'spin'; icon.textContent = '↻';
   document.getElementById('status-bar').innerHTML = `<span class="pill pill-load">${T('fetching')}</span>`;
 
-  // If web app URL is set, rebuild first (full export). Load path is in fetchTransactions.
+  // Optional: Apps Script rebuild (URL is a secret — keep it out of the public repo)
   const exportUrl = (localStorage.getItem(LS_EXPORT_URL) || '').trim();
   if (exportUrl) {
     try {
@@ -1666,16 +1791,22 @@ async function refreshAll() {
 (async () => {
   loadBalancesFromStorage();
   initDragAndDrop();
-  // Restore anon preference before first paint of values
   const anonTog = document.getElementById('tog-anon');
   if (anonTog) {
     anonTog.checked = anonMode;
     document.body.classList.toggle('anon', anonMode);
     document.getElementById('anon-lbl').textContent = anonMode ? T('anon-on') : T('anon-off');
   }
-  // Same-origin data/wallet-snapshot.json loads without any ID. Data modal is optional.
-  await refreshAll();
-  if (!STATE.driveOk) setTimeout(showSnapshotModal, 400);
+  // Encrypted vault: try this-device key, else ask for passphrase
+  const ok = await tryUnlockFromDevice();
+  if (ok) {
+    await fetchSavings();
+    renderAll(STATE.transactions);
+    generateAiSummary(STATE.transactions, false).catch(() => {});
+  } else {
+    showUnlockModal();
+    updateStatus();
+  }
 })();
 
 // ═══════════════════════════════════════════════════════
@@ -1761,22 +1892,24 @@ function initDragAndDrop() {
   </div>
 </div>
 
-<!-- Snapshot config modal -->
-<div id="snapshot-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1001;align-items:center;justify-content:center">
-  <div style="background:#13161e;border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:24px;width:400px;max-width:92vw">
-    <div style="font-size:16px;font-weight:700;margin-bottom:4px">⚙️ Data source</div>
-    <div style="font-size:12px;color:#7a7f9a;margin-bottom:14px;line-height:1.45">
-      The dashboard loads <code>data/wallet-snapshot.json</code> from this site automatically (no ID needed).
-      Optional: paste a Drive file ID or set the Apps Script <b>/exec</b> URL in Settings for live rebuilds.
-      Direct Drive downloads are often blocked by the browser — same-origin / web app are the reliable paths.
+<!-- Unlock vault (required — numbers are AES-GCM encrypted on the public site) -->
+<div id="unlock-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:2000;align-items:center;justify-content:center">
+  <div style="background:#13161e;border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:28px;width:380px;max-width:92vw">
+    <div style="font-size:18px;font-weight:700;margin-bottom:6px">🔐 Unlock dashboard</div>
+    <div style="font-size:12px;color:#7a7f9a;margin-bottom:16px;line-height:1.5">
+      The site is public, but your numbers are encrypted. Enter your passphrase.
+      Check <b>Remember this device</b> to skip this next time on this browser only.
     </div>
-    <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">Snapshot file ID (optional)</label>
-    <input id="modal-snapshot-id" type="text" placeholder="optional Drive file id" autocomplete="off"
-      style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:#f0f2f7;font-size:13px;margin-bottom:16px">
-    <div style="display:flex;gap:8px">
-      <button onclick="saveSnapshotFromModal()" style="flex:1;background:#4a9eff;color:#fff;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:600;cursor:pointer">Save & load</button>
-      <button onclick="hideSnapshotModal()" style="flex:1;background:#1a1e2a;color:#7a7f9a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;font-size:13px;cursor:pointer">Cancel</button>
-    </div>
+    <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">Passphrase</label>
+    <input id="unlock-pass" type="password" autocomplete="current-password"
+      onkeydown="if(event.key==='Enter')submitUnlock()"
+      style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px 12px;color:#f0f2f7;font-size:14px;margin-bottom:10px">
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#7a7f9a;margin-bottom:12px;cursor:pointer">
+      <input type="checkbox" id="unlock-remember" checked> Remember this device
+    </label>
+    <div id="unlock-error" style="font-size:12px;color:#e55353;min-height:18px;margin-bottom:8px"></div>
+    <button type="button" id="unlock-btn" onclick="submitUnlock()"
+      style="width:100%;background:#4a9eff;color:#fff;border:none;border-radius:8px;padding:12px;font-size:14px;font-weight:600;cursor:pointer">Unlock</button>
   </div>
 </div>
 </body>
