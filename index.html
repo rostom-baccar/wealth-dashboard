@@ -497,6 +497,9 @@ function fmtM(v) {
   return `<span class="blur-val">${fmt(v)}</span>`;
 }
 function fmt(v) { return '€' + Math.abs(Math.round(v)).toLocaleString('fr-FR'); }
+function fmt2(v) {
+  return '€' + Math.abs(Number(v)).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 function fmtAxis(v) { return anonMode ? '•••' : fmt(v); }
 function fmtTip(label, v) { return anonMode ? '•••' : (label ? label + ': ' + fmt(v) : fmt(v)); }
 
@@ -1087,7 +1090,7 @@ function renderExpenses(txs) {
         <div class="exp-meta">${meta !== t.category ? meta : timeStr} · ${dateStr}</div>
       </div>
       <div class="exp-right">
-        <div class="exp-amt blur-val">-${fmt(Math.abs(t.amount))}</div>
+        <div class="exp-amt blur-val">-${fmt2(t.amount)}</div>
       </div>
     </div>`;
   }).join('');
