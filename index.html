@@ -48,20 +48,46 @@ body{padding:20px;max-width:1100px;margin:0 auto}
 .kpi-sub{font-size:11px;color:var(--muted);margin-top:3px}
 .kpi-badge{font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;display:inline-block;margin-top:3px}
 .bg{background:var(--green-dim);color:var(--green)}.br{background:var(--red-dim);color:var(--red)}.bb{background:var(--blue-dim);color:var(--blue)}.ba{background:var(--amber-dim);color:var(--amber)}
-/* Anon — strong blur that fully obscures values */
-body.anon .blur-val{
+/* Anon — blur every money-bearing surface (not only .blur-val) */
+body.anon .blur-val,
+body.anon .nw-sub-val,
+body.anon .nw-delta,
+body.anon .kpi-badge,
+body.anon .kpi-sub,
+body.anon .ab-pct,
+body.anon .ab-track,
+body.anon .cb-track,
+body.anon .ms-bar,
+body.anon .etf-r,
+body.anon .fx-row,
+body.anon #ai-body,
+body.anon #facts,
+body.anon #patterns,
+body.anon #savings-avgs,
+body.anon #pea-perf-sub,
+body.anon #crossover-box,
+body.anon #proj-table,
+body.anon #proj-scenarios,
+body.anon #month-summary,
+body.anon #fixed-breakdown,
+body.anon #etf-cards,
+body.anon #alloc-bars,
+body.anon #cat-bars,
+body.anon .cw,
+body.anon .sl-row output,
+body.anon #modal-auto-summary{
   filter:blur(12px) !important;
   opacity:0.15 !important;
-  user-select:none;
-  pointer-events:none;
+  user-select:none !important;
+  pointer-events:none !important;
   transition:filter .2s,opacity .2s
 }
 body.anon .nw-amount{
   filter:blur(20px) !important;
   opacity:0.1 !important;
   -webkit-text-fill-color:var(--text) !important;
+  user-select:none !important;
 }
-body.anon .nw-sub-val{filter:blur(10px) !important;opacity:0.15 !important}
 /* Grids */
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
 .g1{margin-bottom:12px}
@@ -455,19 +481,24 @@ function onLangToggle() {
 }
 
 // ═══════════════════════════════════════════════════════
-// Anon mode — CSS-only blur, no re-render
+// Anon mode — CSS blur on all money surfaces (see body.anon rules)
 // ═══════════════════════════════════════════════════════
-let anonMode = false;
+let anonMode = localStorage.getItem('dashboard_anon') === '1';
 function onAnonToggle() {
   anonMode = document.getElementById('tog-anon').checked;
   document.body.classList.toggle('anon', anonMode);
+  localStorage.setItem('dashboard_anon', anonMode ? '1' : '0');
   document.getElementById('anon-lbl').textContent = anonMode ? T('anon-on') : T('anon-off');
+  // Rebuild charts so axis/tooltips don't leak plain € while anon is on
+  if (STATE.transactions && STATE.transactions.length) renderAll(STATE.transactions);
 }
 // Wrap money string in a blurrable span
 function fmtM(v) {
   return `<span class="blur-val">${fmt(v)}</span>`;
 }
 function fmt(v) { return '€' + Math.abs(Math.round(v)).toLocaleString('fr-FR'); }
+function fmtAxis(v) { return anonMode ? '•••' : fmt(v); }
+function fmtTip(label, v) { return anonMode ? '•••' : (label ? label + ': ' + fmt(v) : fmt(v)); }
 
 // ═══════════════════════════════════════════════════════
 // State
@@ -810,7 +841,7 @@ function drawPeaPerf() {
   charts.peaChart = new Chart(ctx, {
     type:'line',
     data:{labels:months,datasets:[{label:'PEA',data:vals,borderColor:'#4a9eff',backgroundColor:'rgba(74,158,255,0.08)',fill:true,borderWidth:2,pointRadius:3,pointBackgroundColor:'#4a9eff',tension:.35}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmt(c.raw)}}},scales:{x:{ticks:{color:'#7a7f9a',font:{size:10}},grid:{display:false}},y:{ticks:{callback:v=>fmt(v),color:'#7a7f9a',font:{size:10}},grid:{color:'rgba(255,255,255,.04)'}}}}
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmtTip('', c.raw)}}},scales:{x:{ticks:{color:'#7a7f9a',font:{size:10}},grid:{display:false}},y:{ticks:{callback:v=>fmtAxis(v),color:'#7a7f9a',font:{size:10}},grid:{color:'rgba(255,255,255,.04)'}}}}
   });
 }
 
@@ -863,11 +894,11 @@ function drawCashflow(txs) {
       interaction:{mode:'index',intersect:false},
       plugins:{
         legend:{display:true, position:'top', labels:{color:'#7a7f9a', font:{size:10}, boxWidth:10, padding:14}},
-        tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.raw)}}
+        tooltip:{callbacks:{label:c=>fmtTip(c.dataset.label, c.raw)}}
       },
       scales:{
         x:{ticks:{font:{size:9},color:'#7a7f9a',maxRotation:35},grid:{display:false}},
-        y:{ticks:{callback:v=>fmt(v),font:{size:9},color:'#7a7f9a'},grid:{color:'rgba(255,255,255,.04)'},title:{display:false}},
+        y:{ticks:{callback:v=>fmtAxis(v),font:{size:9},color:'#7a7f9a'},grid:{color:'rgba(255,255,255,.04)'},title:{display:false}},
         yNet:{display:false,position:'right'},
       }
     }
@@ -888,13 +919,13 @@ function drawFixedVar(txs) {
   charts.fvChart = new Chart(ctx, {
     type:'doughnut',
     data:{labels:[T('lbl-fixed'),T('lbl-variable')],datasets:[{data:[Math.round(fixed),Math.round(variable)],backgroundColor:['#4a9eff','#f5a623'],borderWidth:0,hoverOffset:4}]},
-    options:{responsive:true,maintainAspectRatio:false,cutout:'60%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.label+': '+fmt(c.raw)}}}}
+    options:{responsive:true,maintainAspectRatio:false,cutout:'60%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmtTip(c.label, c.raw)}}}}
   });
   const isFr = lang === 'fr';
   document.getElementById('fixed-breakdown').innerHTML =
     ['Loyer / Rent|€780','Navigo|€90.80','Mobile + Wifi|€50','Cursor|€21','EDF|€30','Streaming + misc|€18.47']
-    .map(r => { const[k,v]=r.split('|'); return `<div class="fx-row"><span>${k}</span><span>${v}/mo</span></div>`; }).join('') +
-    `<div class="fx-row total"><span>Total ${T('fixed-total')}</span><span>€990/mo</span></div>`;
+    .map(r => { const[k,v]=r.split('|'); return `<div class="fx-row"><span>${k}</span><span class="blur-val">${v}/mo</span></div>`; }).join('') +
+    `<div class="fx-row total"><span>Total ${T('fixed-total')}</span><span class="blur-val">€990/mo</span></div>`;
 }
 
 const CAT_ICONS = {'Rent':'🏠','Food':'🍕','Groceries':'🛒','Leisure, Entertainment & Social':'🎉','Subscriptions':'📱','Out of budget':'⚡','Transportation':'🚇','Health & Well-being':'💊','Gifts':'🎁','Household':'🏡','Gas & Electricity':'💡','Travel Expenses':'✈️','Vacation Expenses':'🏖️','Other':'📦'};
@@ -1032,7 +1063,7 @@ function renderNetWorthHero() {
   document.getElementById('lbl-nw-hero').textContent = T('lbl-nw-hero');
 
   document.getElementById('nw-delta-wrap').innerHTML =
-    `<div class="nw-delta">📈 PEA +${peaGainPct}% · 0 ${isFr?'dette':'debt'}</div>`;
+    `<div class="nw-delta">📈 PEA <span class="blur-val">+${peaGainPct}%</span> · 0 ${isFr?'dette':'debt'}</div>`;
 
   document.getElementById('nw-sub-items').innerHTML = [
     {l:'PEA', v:STATE.pea, c:'#4a9eff'},
@@ -1061,8 +1092,8 @@ function renderSavings() {
   const avgNet = Math.round(rows.reduce((s, r) => s + r.saved, 0) / rows.length);
   const avgCash = Math.round(rows.reduce((s, r) => s + r.cash, 0) / rows.length);
   const note = isFr
-    ? `net = revenus − dépenses · cash = net − PEA (${fmt(STATE.peaMonthly)}/mois, Finary)`
-    : `net = income − expenses · cash = net − PEA (${fmt(STATE.peaMonthly)}/mo, Finary)`;
+    ? `net = revenus − dépenses · cash = net − PEA (<span class="blur-val">${fmt(STATE.peaMonthly)}/mois</span>, Finary)`
+    : `net = income − expenses · cash = net − PEA (<span class="blur-val">${fmt(STATE.peaMonthly)}/mo</span>, Finary)`;
   document.getElementById('savings-avgs').innerHTML =
     `${isFr?'moy. net':'avg net'} <b class="blur-val" style="color:${avgNet>=0?'var(--green)':'var(--red)'}">${avgNet>=0?'+':''}${fmt(avgNet)}</b> · cash <b class="blur-val" style="color:${avgCash>=0?'var(--green)':'var(--red)'}">${avgCash>=0?'+':''}${fmt(avgCash)}</b> · <span style="font-weight:400">${note}</span>`;
   el.innerHTML = '<div class="cw" style="height:220px"><canvas id="savingsChart"></canvas></div>';
@@ -1100,11 +1131,11 @@ function renderSavings() {
       responsive: true, maintainAspectRatio: false,
       plugins: {
         legend: { labels: { color: '#7a7f9a', font: { size: 10 } } },
-        tooltip: { callbacks: { label: c => `${c.dataset.label}: ${(c.raw>=0?'+':'')}${fmt(c.raw)}` } },
+        tooltip: { callbacks: { label: c => anonMode ? '•••' : `${c.dataset.label}: ${(c.raw>=0?'+':'')}${fmt(c.raw)}` } },
       },
       scales: {
         x: { ticks: { color: '#7a7f9a', font: { size: 9 }, maxRotation: 35 }, grid: { display: false } },
-        y: { ticks: { callback: v => fmt(v), color: '#7a7f9a', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,.04)' } },
+        y: { ticks: { callback: v => fmtAxis(v), color: '#7a7f9a', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,.04)' } },
       },
     },
   });
@@ -1122,11 +1153,11 @@ function renderKPIs(txs) {
   const spendColor = spend30 > 2200 ? 'red' : 'blue';
   const isFr = lang === 'fr';
   document.getElementById('kpi-grid').innerHTML = `
-    <div class="kpi green"><div class="kpi-lbl">PEA</div><div class="kpi-v blur-val">${fmt(STATE.pea)}</div><div class="kpi-badge bg">+${peaGainPct}%</div></div>
+    <div class="kpi green"><div class="kpi-lbl">PEA</div><div class="kpi-v blur-val">${fmt(STATE.pea)}</div><div class="kpi-badge bg blur-val">+${peaGainPct}%</div></div>
     <div class="kpi green"><div class="kpi-lbl">${T('gain')}</div><div class="kpi-v blur-val">${fmt(peaGain)}</div><div class="kpi-sub">${isFr?'non réalisé':'unrealised'}</div></div>
     <div class="kpi amber"><div class="kpi-lbl">Livret A</div><div class="kpi-v blur-val">${fmt(STATE.livretA)}</div><div class="kpi-sub">3% ${T('risk-free')}</div></div>
     <div class="kpi purple"><div class="kpi-lbl">PEE</div><div class="kpi-v blur-val">${fmt(STATE.pee)}</div><div class="kpi-sub">${T('avail')} 2029+</div></div>
-    <div class="kpi ${spendColor}"><div class="kpi-lbl">${T('lbl-spend30')}</div><div class="kpi-v blur-val">${fmt(spend30)}</div><div class="kpi-sub">vs €2 100 avg</div></div>
+    <div class="kpi ${spendColor}"><div class="kpi-lbl">${T('lbl-spend30')}</div><div class="kpi-v blur-val">${fmt(spend30)}</div><div class="kpi-sub blur-val">vs €2 100 avg</div></div>
     <div class="kpi blue"><div class="kpi-lbl">${isFr?'Taux épargne':'Savings rate'}</div><div class="kpi-v blur-val">${(STATE.savingsData&&STATE.savingsData.length?fmt(STATE.savingsData.slice(0,3).reduce((s,r)=>s+r.saved,0)/Math.min(3,STATE.savingsData.length)):fmt(0))}</div><div class="kpi-sub">${isFr?'moy 3 mois':'3-mo avg'}</div></div>`;
 }
 
@@ -1141,7 +1172,7 @@ function renderAllocBars() {
       <span class="ab-pct">${a.pct}%</span>
       <span class="ab-amt blur-val">${fmt(STATE.pea * a.pct / 100)}</span>
     </div>`).join('');
-  document.getElementById('pea-perf-sub').textContent = '+' + ((STATE.pea - STATE.monthlyCostBasis) / STATE.monthlyCostBasis * 100).toFixed(1) + '% ' + T('unrealised');
+  document.getElementById('pea-perf-sub').innerHTML = '<span class="blur-val">+' + ((STATE.pea - STATE.monthlyCostBasis) / STATE.monthlyCostBasis * 100).toFixed(1) + '% ' + T('unrealised') + '</span>';
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1258,7 +1289,7 @@ function updateProjection() {
       {label:`${rate}%`,data:p12.map(p=>p.v), borderColor:'#2ecc8f',borderWidth:2.5,pointRadius:0,fill:false,tension:.3},
       {label:T('contributions'),data:p12.map((p,i)=>Math.round(base+monthly*p.yr*12+bonus*p.yr)),borderColor:'rgba(255,255,255,.18)',borderWidth:1,pointRadius:0,fill:false,borderDash:[4,4]},
     ]},
-    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.raw)}}},scales:{x:{ticks:{font:{size:9},color:'#7a7f9a',maxRotation:45},grid:{display:false}},y:{ticks:{callback:v=>fmt(v),font:{size:10},color:'#7a7f9a'},grid:{color:'rgba(255,255,255,.04)'}}}}
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmtTip(c.dataset.label, c.raw)}}},scales:{x:{ticks:{font:{size:9},color:'#7a7f9a',maxRotation:45},grid:{display:false}},y:{ticks:{callback:v=>fmtAxis(v),font:{size:10},color:'#7a7f9a'},grid:{color:'rgba(255,255,255,.04)'}}}}
   });
 
   const threshold = monthly / (rate/12/100);
@@ -1473,6 +1504,13 @@ async function refreshAll() {
 (async () => {
   loadBalancesFromStorage();
   initDragAndDrop();
+  // Restore anon preference before first paint of values
+  const anonTog = document.getElementById('tog-anon');
+  if (anonTog) {
+    anonTog.checked = anonMode;
+    document.body.classList.toggle('anon', anonMode);
+    document.getElementById('anon-lbl').textContent = anonMode ? T('anon-on') : T('anon-off');
+  }
   // Same-origin data/wallet-snapshot.json loads without any ID. Data modal is optional.
   await refreshAll();
   if (!STATE.driveOk) setTimeout(showSnapshotModal, 400);
