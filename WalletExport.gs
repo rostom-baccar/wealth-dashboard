@@ -431,18 +431,31 @@ function buildLookup(rows, keyCol, valCol) {
 
 // ================================================================
 // WEB APP — deploy as "Execute as: Me", "Who has access: Anyone"
-// Dashboard Refresh calls this URL to rebuild wallet-snapshot.json
+// Dashboard calls this URL to rebuild + receive the snapshot JSON.
+// Browser cannot read Drive directly (CORS/CORP), so we return it here.
 // ================================================================
 function doGet(e) {
   try {
-    exportWalletToSheet();
-    const out = { ok: true, at: new Date().toISOString() };
-    return ContentService
-      .createTextOutput(JSON.stringify(out))
-      .setMimeType(ContentService.MimeType.JSON);
+    const params = (e && e.parameter) || {};
+    const readOnly = String(params.read || '') === '1';
+    if (!readOnly) exportWalletToSheet();
+
+    const folder = DriveApp.getFolderById(SQLITE_FOLDER_ID);
+    const snapshot = readExistingSnapshot_(folder);
+    if (!snapshot) {
+      return jsonOutput_({ ok: false, error: 'No wallet-snapshot.json found after export' });
+    }
+    // Include ok flag; dashboard accepts either bare snapshot or {ok, ...snapshot}
+    snapshot.ok = true;
+    snapshot.servedAt = new Date().toISOString();
+    return jsonOutput_(snapshot);
   } catch (err) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ ok: false, error: String(err && err.message || err) }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return jsonOutput_({ ok: false, error: String(err && err.message || err) });
   }
+}
+
+function jsonOutput_(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
 }

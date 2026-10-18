@@ -591,32 +591,68 @@ function applyBalancesPayload(b, { persist = true } = {}) {
 }
 
 function snapshotDownloadUrl(fileId) {
-  // drive.google.com/uc blocks browser Origin (403). usercontent allows CORS (*).
+  // Prefer usercontent (ACAO *); drive.google.com/uc returns 403 with browser Origin.
+  // Note: some browsers still block via CORP — web app / same-origin fallbacks exist below.
   return `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=download&confirm=t`;
 }
 
+function applySnapshotData(data) {
+  if (!data || !Array.isArray(data.transactions)) throw new Error('Invalid snapshot JSON');
+  STATE.transactions = data.transactions.map(t => ({
+    date: new Date(t.date), type: t.type, category: t.category,
+    amount: parseFloat(t.amount), memo: t.memo || '',
+  })).filter(t => !isNaN(t.date) && !isNaN(t.amount))
+    .sort((a, b) => b.date - a.date);
+  STATE.driveOk = true;
+  STATE.lastSnapshotSync = data.lastSync || data.servedAt || null;
+  if (data.balances) applyBalancesPayload(data.balances);
+}
+
+async function fetchSnapshotJson(url) {
+  const res = await fetch(url, { cache: 'no-store', redirect: 'follow' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  // Web app may return { ok:false, error } or full snapshot (with optional ok:true)
+  if (data && data.ok === false) throw new Error(data.error || 'Snapshot error');
+  if (data && Array.isArray(data.transactions)) return data;
+  if (data && data.snapshot && Array.isArray(data.snapshot.transactions)) return data.snapshot;
+  throw new Error('No transactions in response');
+}
+
 async function fetchTransactions() {
-  const fileId = getSnapshotFileId();
-  if (!fileId) { STATE.driveOk = false; return; }
-  try {
-    const res = await fetch(snapshotDownloadUrl(fileId), { cache: 'no-store' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-    if (!data || !Array.isArray(data.transactions)) throw new Error('Invalid snapshot JSON');
-    STATE.transactions = (data.transactions || []).map(t => ({
-      date: new Date(t.date), type: t.type, category: t.category,
-      amount: parseFloat(t.amount), memo: t.memo || '',
-    })).filter(t => !isNaN(t.date) && !isNaN(t.amount))
-      .sort((a, b) => b.date - a.date);
-    STATE.driveOk = true;
-    STATE.lastSnapshotSync = data.lastSync;
-    // Prefer live balances baked into the snapshot (from Finary → Drive sync)
-    if (data.balances) applyBalancesPayload(data.balances);
-  } catch (e) {
-    console.warn('Snapshot fetch:', e.message);
-    STATE.driveOk = false;
-    STATE.finaryOk = !!(STATE.pea || STATE.livretA);
+  const errors = [];
+  const sources = [];
+
+  // 1) Apps Script web app — can rebuild + return JSON (bypasses Drive CORS)
+  const exportUrl = (localStorage.getItem(LS_EXPORT_URL) || '').trim();
+  if (exportUrl) {
+    const base = exportUrl.split('?')[0];
+    sources.push({ name: 'webapp', url: base + '?read=1&t=' + Date.now() });
   }
+
+  // 2) Same-origin fallback shipped with the site (always CORS-safe)
+  sources.push({ name: 'pages', url: './data/wallet-snapshot.json?t=' + Date.now() });
+
+  // 3) Direct Drive file ID (often blocked in browser — best-effort)
+  const fileId = getSnapshotFileId();
+  if (fileId) sources.push({ name: 'drive', url: snapshotDownloadUrl(fileId) });
+
+  for (const src of sources) {
+    try {
+      const data = await fetchSnapshotJson(src.url);
+      applySnapshotData(data);
+      STATE.snapshotSource = src.name;
+      console.info('Snapshot loaded from', src.name);
+      return;
+    } catch (e) {
+      errors.push(src.name + ': ' + e.message);
+      console.warn('Snapshot source failed', src.name, e.message);
+    }
+  }
+
+  STATE.driveOk = false;
+  STATE.finaryOk = !!(STATE.pea || STATE.livretA);
+  STATE.snapshotFetchError = errors.join(' · ');
 }
 
 function deriveSavingsFromTransactions(txs) {
@@ -1367,8 +1403,8 @@ function updateStatus() {
     : 'Finary ✗';
   const balTitle = balAge ? `Balances updated ${balAge.toLocaleString()}` : 'No balances in snapshot — set ⚙️ Data + run Apps Script';
   const driveTitle = STATE.driveOk
-    ? `Snapshot ${STATE.lastSnapshotSync ? new Date(STATE.lastSnapshotSync).toLocaleString() : 'OK'}`
-    : 'Set snapshot file ID via ⚙️ Data';
+    ? `Via ${STATE.snapshotSource || '?'} · ${STATE.lastSnapshotSync ? new Date(STATE.lastSnapshotSync).toLocaleString() : 'OK'}`
+    : (STATE.snapshotFetchError || 'Could not load snapshot');
   document.getElementById('status-bar').innerHTML = [
     `<span class="pill ${STATE.driveOk?'pill-ok':'pill-err'}" title="${driveTitle}">${STATE.driveOk?'Drive ✓':'Drive ✗'}</span>`,
     `<span class="pill ${STATE.finaryOk?'pill-ok':'pill-err'}" title="${balTitle}">${balLabel}</span>`,
@@ -1411,19 +1447,20 @@ async function refreshAll() {
   btn.classList.add('refreshing'); icon.className = 'spin'; icon.textContent = '↻';
   document.getElementById('status-bar').innerHTML = `<span class="pill pill-load">${T('fetching')}</span>`;
 
-  // 1) Optional: trigger Apps Script web app to rebuild wallet-snapshot.json from Drive sqlite
+  // If web app URL is set, rebuild first (full export). Load path is in fetchTransactions.
   const exportUrl = (localStorage.getItem(LS_EXPORT_URL) || '').trim();
   if (exportUrl) {
     try {
-      await fetch(exportUrl + (exportUrl.includes('?') ? '&' : '?') + 't=' + Date.now(), { mode: 'cors' });
-      await new Promise(r => setTimeout(r, 1500)); // let script finish writing
+      const base = exportUrl.split('?')[0];
+      const data = await fetchSnapshotJson(base + '?t=' + Date.now());
+      applySnapshotData(data);
+      STATE.snapshotSource = 'webapp-rebuild';
     } catch (e) {
-      console.warn('Export trigger failed (deploy Apps Script as web app):', e.message);
+      console.warn('Web app rebuild failed:', e.message);
+      STATE.driveOk = false;
     }
   }
-
-  // 2) Re-fetch snapshot (transactions + any merged Finary balances)
-  await fetchTransactions();
+  if (!STATE.driveOk) await fetchTransactions();
   await fetchSavings();
   renderAll(STATE.transactions);
   btn.classList.remove('refreshing'); icon.className = ''; icon.textContent = '↻';
@@ -1436,12 +1473,9 @@ async function refreshAll() {
 (async () => {
   loadBalancesFromStorage();
   initDragAndDrop();
-  if (!getSnapshotFileId()) {
-    setTimeout(showSnapshotModal, 300);
-  } else {
-    await refreshAll();
-  }
-  // Never auto-open Settings — user opens it via the button when needed.
+  // Same-origin data/wallet-snapshot.json loads without any ID. Data modal is optional.
+  await refreshAll();
+  if (!STATE.driveOk) setTimeout(showSnapshotModal, 400);
 })();
 
 // ═══════════════════════════════════════════════════════
@@ -1532,12 +1566,12 @@ function initDragAndDrop() {
   <div style="background:#13161e;border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:24px;width:400px;max-width:92vw">
     <div style="font-size:16px;font-weight:700;margin-bottom:4px">⚙️ Data source</div>
     <div style="font-size:12px;color:#7a7f9a;margin-bottom:14px;line-height:1.45">
-      Paste your Drive <b>wallet-snapshot.json</b> file ID (Apps Script <code>_meta!A1</code>, or the ID in the Drive file link).
-      Red Drive / Finary / Wallet pills mean this ID is missing or wrong — Save & load here, then Refresh.
-      Stored in this browser only — <b>not</b> in the public GitHub repo.
+      The dashboard loads <code>data/wallet-snapshot.json</code> from this site automatically (no ID needed).
+      Optional: paste a Drive file ID or set the Apps Script <b>/exec</b> URL in Settings for live rebuilds.
+      Direct Drive downloads are often blocked by the browser — same-origin / web app are the reliable paths.
     </div>
-    <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">Snapshot file ID</label>
-    <input id="modal-snapshot-id" type="text" placeholder="e.g. 1UDN5c6JoKWzCpiwSMZcbVKipFnwzR-az" autocomplete="off"
+    <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">Snapshot file ID (optional)</label>
+    <input id="modal-snapshot-id" type="text" placeholder="optional Drive file id" autocomplete="off"
       style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:#f0f2f7;font-size:13px;margin-bottom:16px">
     <div style="display:flex;gap:8px">
       <button onclick="saveSnapshotFromModal()" style="flex:1;background:#4a9eff;color:#fff;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:600;cursor:pointer">Save & load</button>
