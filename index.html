@@ -1351,6 +1351,172 @@ function renderAiHtml(text) {
   return out;
 }
 
+/** Build a rich, token-efficient context blob for Gemini. */
+function buildAiContext(txs) {
+  const now = new Date();
+  const nw = STATE.pea + STATE.livretA + STATE.pee;
+  const peaGain = STATE.monthlyCostBasis > 0 ? STATE.pea - STATE.monthlyCostBasis : 0;
+  const peaGainPct = STATE.monthlyCostBasis > 0
+    ? ((peaGain / STATE.monthlyCostBasis) * 100).toFixed(1)
+    : null;
+
+  const monthKey = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  const thisKey = monthKey(now);
+  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevKey = monthKey(prev);
+
+  const byMonth = {};
+  const catsThis = {};
+  const catsAll = {};
+  let thisInc = 0, thisExp = 0, prevInc = 0, prevExp = 0;
+  let oobThis = 0, foodThis = 0, fixedThis = 0;
+  const FIXED = new Set(['Rent', 'Subscriptions', 'Gas & Electricity']);
+
+  txs.forEach(t => {
+    const k = monthKey(t.date);
+    if (!byMonth[k]) byMonth[k] = { inc: 0, exp: 0 };
+    if (t.amount > 0) byMonth[k].inc += t.amount;
+    else byMonth[k].exp += Math.abs(t.amount);
+
+    if (t.amount < 0 && t.category !== 'Month progress bar') {
+      catsAll[t.category] = (catsAll[t.category] || 0) + Math.abs(t.amount);
+    }
+    if (k === thisKey) {
+      if (t.amount > 0) thisInc += t.amount;
+      else {
+        const a = Math.abs(t.amount);
+        thisExp += a;
+        if (t.category === 'Out of budget') oobThis += a;
+        if (t.category === 'Food' || t.category === 'Groceries') foodThis += a;
+        if (FIXED.has(t.category)) fixedThis += a;
+        catsThis[t.category] = (catsThis[t.category] || 0) + a;
+      }
+    }
+    if (k === prevKey) {
+      if (t.amount > 0) prevInc += t.amount;
+      else prevExp += Math.abs(t.amount);
+    }
+  });
+
+  const monthKeys = Object.keys(byMonth).sort();
+  const nMonths = monthKeys.length || 1;
+  const avgInc = monthKeys.reduce((s, k) => s + byMonth[k].inc, 0) / nMonths;
+  const avgExp = monthKeys.reduce((s, k) => s + byMonth[k].exp, 0) / nMonths;
+  const avgNet = avgInc - avgExp;
+  const savingsRate = avgInc > 0 ? Math.round((avgNet / avgInc) * 100) : null;
+
+  const savingsRows = deriveSavingsFromTransactions(txs).slice(0, 6);
+  const topCatsAll = Object.entries(catsAll).sort((a, b) => b[1] - a[1]).slice(0, 6)
+    .map(([n, v]) => `${n} €${Math.round(v / nMonths)}/mo`).join(', ');
+  const topCatsThis = Object.entries(catsThis).sort((a, b) => b[1] - a[1]).slice(0, 5)
+    .map(([n, v]) => `${n} €${Math.round(v)}`).join(', ');
+
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const day = now.getDate();
+  const pacedExp = day > 0 ? Math.round(thisExp / day * daysInMonth) : 0;
+
+  const alloc = (STATE.peaAlloc || [])
+    .map(a => `${a.name} ${a.pct}%`)
+    .join(', ');
+
+  return {
+    nw: Math.round(nw),
+    pea: Math.round(STATE.pea),
+    livretA: Math.round(STATE.livretA),
+    pee: Math.round(STATE.pee),
+    costBasis: Math.round(STATE.monthlyCostBasis || 0),
+    peaGain: Math.round(peaGain),
+    peaGainPct,
+    peaMonthly: Math.round(STATE.peaMonthly || 0),
+    alloc,
+    nMonths,
+    avgInc: Math.round(avgInc),
+    avgExp: Math.round(avgExp),
+    avgNet: Math.round(avgNet),
+    savingsRate,
+    thisInc: Math.round(thisInc),
+    thisExp: Math.round(thisExp),
+    thisNet: Math.round(thisInc - thisExp),
+    pacedExp,
+    prevInc: Math.round(prevInc),
+    prevExp: Math.round(prevExp),
+    prevNet: Math.round(prevInc - prevExp),
+    oobThis: Math.round(oobThis),
+    foodThis: Math.round(foodThis),
+    fixedThis: Math.round(fixedThis),
+    topCatsAll,
+    topCatsThis,
+    recentMonths: savingsRows.map(r =>
+      `${r.date}: income €${r.inc}, spend €${r.exp}, net €${r.saved}, cash-after-PEA €${r.cash}`
+    ).join('\n'),
+    day, daysInMonth,
+  };
+}
+
+function buildGeminiPrompt(ctx, isFr) {
+  const dataBlock = `
+PROFILE: Rostom, 27, Paris. Goal: grow PEA aggressively, keep Livret A as cash buffer, PEE locked until ~2029.
+PORTFOLIO: net worth €${ctx.nw} | PEA €${ctx.pea} (cost €${ctx.costBasis}, unrealised ${ctx.peaGainPct != null ? ctx.peaGainPct + '%' : 'n/a'} / €${ctx.peaGain}) | Livret A €${ctx.livretA} | PEE €${ctx.pee}
+PEA: ~€${ctx.peaMonthly}/mo contribution (from Finary cost basis) | allocation ${ctx.alloc || 'n/a'}
+CASHFLOW (${ctx.nMonths} months history): avg income €${ctx.avgInc}/mo · avg spend €${ctx.avgExp}/mo · avg net €${ctx.avgNet}/mo · savings rate ${ctx.savingsRate != null ? ctx.savingsRate + '%' : 'n/a'}
+THIS MONTH (day ${ctx.day}/${ctx.daysInMonth}): income €${ctx.thisInc} · spend €${ctx.thisExp} · net €${ctx.thisNet} · pace → €${ctx.pacedExp} spend if unchanged
+LAST MONTH: income €${ctx.prevInc} · spend €${ctx.prevExp} · net €${ctx.prevNet}
+THIS MONTH DETAIL: food/groceries €${ctx.foodThis} · fixed €${ctx.fixedThis} · out-of-budget €${ctx.oobThis}
+TOP CATEGORIES (avg/mo): ${ctx.topCatsAll || 'n/a'}
+TOP THIS MONTH: ${ctx.topCatsThis || 'n/a'}
+RECENT MONTHS:
+${ctx.recentMonths || 'n/a'}
+`.trim();
+
+  if (isFr) {
+    return `Tu es un conseiller patrimonial exigeant (pas un chatbot générique). Analyse les finances personnelles de Rostom et produis un brief actionnable.
+
+RÈGLES:
+- Français, ton direct, un peu cash, jamais moralisateur.
+- Utilise **gras** sur les chiffres et conclusions clés.
+- Ne répète pas bêtement les données: **interprète** (comparaisons MoM, rythme du mois, fuites, leviers).
+- Cite des € précis tirés des données. Si une info manque, dis-le brièvement.
+- Pas de disclaimer légal. Pas de blabla introductif.
+- 1 titre + 6 à 8 puces (- ), dont la dernière = **Action du jour** (concrète, chiffrée, faisable aujourd'hui).
+
+STRUCTURE OBLIGATOIRE:
+**[Titre percutant une ligne — diagnostic, pas un résumé fade]**
+- Santé du patrimoine / PEA (performance vs coût, rythme vers €70k crossover)
+- Mois en cours vs mois dernier (rythme de dépense vs budget implicite)
+- Plus gros levier de réduction (catégorie) avec impact €/an si −10% ou −€50–100/mois
+- Épargne réelle vs versement PEA (~€${ctx.peaMonthly}) — cash après PEA positif ou non
+- Buffer Livret A: trop bas / OK / trop élevé vs 3–6 mois de dépenses
+- Risque ou angle mort (OOB, food, abonnements, mois négatifs…)
+- **Action du jour:** une seule action précise avec € ou comportement
+
+DONNÉES:
+${dataBlock}`;
+  }
+
+  return `You are a demanding personal-finance analyst (not a generic chatbot). Analyse Rostom's finances and produce an actionable brief.
+
+RULES:
+- English, direct tone, never preachy.
+- Use **bold** on key numbers and conclusions.
+- Do NOT restate the data — **interpret** it (MoM deltas, month pacing, leaks, levers).
+- Quote specific € from the data. If something is missing, say so briefly.
+- No legal disclaimer. No fluff intro.
+- 1 headline + 6–8 bullets (- ), last one = **Today's action** (concrete, quantified, doable today).
+
+REQUIRED STRUCTURE:
+**[Punchy one-line headline — a diagnosis, not a bland summary]**
+- Portfolio / PEA health (vs cost basis, pace toward €70k crossover)
+- This month vs last month (spend pace vs implicit budget)
+- Biggest cut lever (category) with €/year impact if −10% or −€50–100/mo
+- Real savings vs PEA contribution (~€${ctx.peaMonthly}) — cash-after-PEA positive or not
+- Livret A buffer: too low / OK / too high vs 3–6 months of spending
+- Risk or blind spot (OOB, food, subscriptions, negative months…)
+- **Today's action:** one precise action with € or behavior change
+
+DATA:
+${dataBlock}`;
+}
+
 async function generateAiSummary(txs, force=false) {
   if (aiGenerating) return;
   const cached = getAiCache();
@@ -1364,20 +1530,14 @@ async function generateAiSummary(txs, force=false) {
   const el = document.getElementById('ai-body');
   el.innerHTML = `<span class="ai-loading">${T('ai-loading')}</span>`;
 
-  const nw = STATE.pea + STATE.livretA + STATE.pee;
-  const months = [...new Set(txs.map(t => t.date.getFullYear() + '-' + t.date.getMonth()))].length || 1;
-  const avgSpend = txs.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0) / (months || 1);
   const isFr = lang === 'fr';
-  const peaGainPct = STATE.monthlyCostBasis
-    ? ((STATE.pea - STATE.monthlyCostBasis) / STATE.monthlyCostBasis * 100).toFixed(1)
-    : '—';
-  const rows = deriveSavingsFromTransactions(txs).slice(0, 3);
-  const netHint = rows.map(r => `${r.date}: net ${r.saved}, cash ${r.cash}`).join('; ');
+  const ctx = buildAiContext(txs || []);
 
   const localFallback = () => {
+    const paceWarn = ctx.pacedExp > ctx.avgExp * 1.1;
     const text = isFr
-      ? `**Patrimoine ${fmt(nw)}**\n- PEA **${fmt(STATE.pea)}** (${peaGainPct}% vs coût)\n- Livret A **${fmt(STATE.livretA)}** · PEE **${fmt(STATE.pee)}**\n- Dépenses moy. **${fmt(avgSpend)}/mois**\n- ${netHint || 'Pas assez de mois'}\n- Action: vérifie le versement PEA ce mois-ci`
-      : `**Net worth ${fmt(nw)}**\n- PEA **${fmt(STATE.pea)}** (${peaGainPct}% vs cost)\n- Livret A **${fmt(STATE.livretA)}** · PEE **${fmt(STATE.pee)}**\n- Avg spend **${fmt(avgSpend)}/month**\n- ${netHint || 'Not enough months'}\n- Action: keep the PEA contribution this month`;
+      ? `**${paceWarn ? 'Mois tendu' : 'Cap tenu'} — patrimoine ${fmt(ctx.nw)}**\n- PEA **${fmt(ctx.pea)}** (${ctx.peaGainPct || '—'}% vs coût, +${fmt(ctx.peaGain)})\n- Ce mois: dépenses **${fmt(ctx.thisExp)}** (rythme → **${fmt(ctx.pacedExp)}**) vs moy. **${fmt(ctx.avgExp)}**\n- Net moy. **${fmt(ctx.avgNet)}/mois** · taux épargne **${ctx.savingsRate != null ? ctx.savingsRate + '%' : '—'}**\n- Food **${fmt(ctx.foodThis)}** · OOB **${fmt(ctx.oobThis)}** ce mois\n- Livret A **${fmt(ctx.livretA)}** ≈ ${ctx.avgExp > 0 ? (ctx.livretA / ctx.avgExp).toFixed(1) : '—'} mois de dépenses\n- **Action du jour:** plafonne food/OOB pour finir sous **${fmt(ctx.avgExp)}** de dépenses`
+      : `**${paceWarn ? 'Hot month' : 'On track'} — net worth ${fmt(ctx.nw)}**\n- PEA **${fmt(ctx.pea)}** (${ctx.peaGainPct || '—'}% vs cost, +${fmt(ctx.peaGain)})\n- This month spend **${fmt(ctx.thisExp)}** (pace → **${fmt(ctx.pacedExp)}**) vs avg **${fmt(ctx.avgExp)}**\n- Avg net **${fmt(ctx.avgNet)}/mo** · savings rate **${ctx.savingsRate != null ? ctx.savingsRate + '%' : '—'}**\n- Food **${fmt(ctx.foodThis)}** · OOB **${fmt(ctx.oobThis)}** this month\n- Livret A **${fmt(ctx.livretA)}** ≈ ${ctx.avgExp > 0 ? (ctx.livretA / ctx.avgExp).toFixed(1) : '—'} months of spend\n- **Today's action:** cap food/OOB to finish under **${fmt(ctx.avgExp)}** spend`;
     el.innerHTML = renderAiHtml(text);
     setAiCache(text);
   };
@@ -1390,9 +1550,7 @@ async function generateAiSummary(txs, force=false) {
     return;
   }
 
-  const prompt = isFr
-    ? `Tu es un analyste financier concis. Réponds en français. Brief structuré pour Rostom (27, Paris). Utilise **gras** et 5 puces max (- ). Données: patrimoine ${Math.round(nw)}€, PEA ${Math.round(STATE.pea)}€ (${peaGainPct}%), Livret A ${Math.round(STATE.livretA)}€, PEE ${Math.round(STATE.pee)}€, dépenses moy ${Math.round(avgSpend)}€/mois, derniers mois: ${netHint}. Format:\n**[titre une ligne]**\n- puce\n- puce\n- puce\n- puce\n- action du jour`
-    : `You are a sharp financial analyst. English. Structured daily brief for Rostom (27, Paris). Use **bold** and max 5 bullets (- ). Data: net worth €${Math.round(nw)}, PEA €${Math.round(STATE.pea)} (${peaGainPct}%), Livret A €${Math.round(STATE.livretA)}, PEE €${Math.round(STATE.pee)}, avg spend €${Math.round(avgSpend)}/mo, recent months: ${netHint}. Format:\n**[one-line headline]**\n- bullet\n- bullet\n- bullet\n- bullet\n- one action today`;
+  const prompt = buildGeminiPrompt(ctx, isFr);
 
   try {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
@@ -1401,7 +1559,11 @@ async function generateAiSummary(txs, force=false) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.4, maxOutputTokens: 500 },
+        generationConfig: {
+          temperature: 0.55,
+          maxOutputTokens: 900,
+          topP: 0.9,
+        },
       }),
     });
     if (!res.ok) throw new Error('Gemini HTTP ' + res.status);
