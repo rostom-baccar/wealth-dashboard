@@ -1016,8 +1016,8 @@ function renderSavings() {
   const avgNet = Math.round(rows.reduce((s, r) => s + r.saved, 0) / rows.length);
   const avgCash = Math.round(rows.reduce((s, r) => s + r.cash, 0) / rows.length);
   const note = isFr
-    ? `net = revenus − dépenses · cash = net − PEA (${fmt(STATE.peaMonthly || 700)}/mois)`
-    : `net = income − expenses · cash = net − PEA (${fmt(STATE.peaMonthly || 700)}/mo)`;
+    ? `net = revenus − dépenses · cash = net − PEA (${fmt(STATE.peaMonthly)}/mois, Finary)`
+    : `net = income − expenses · cash = net − PEA (${fmt(STATE.peaMonthly)}/mo, Finary)`;
   document.getElementById('savings-avgs').innerHTML =
     `${isFr?'moy. net':'avg net'} <b class="blur-val" style="color:${avgNet>=0?'var(--green)':'var(--red)'}">${avgNet>=0?'+':''}${fmt(avgNet)}</b> · cash <b class="blur-val" style="color:${avgCash>=0?'var(--green)':'var(--red)'}">${avgCash>=0?'+':''}${fmt(avgCash)}</b> · <span style="font-weight:400">${note}</span>`;
   el.innerHTML = '<div class="cw" style="height:220px"><canvas id="savingsChart"></canvas></div>';
