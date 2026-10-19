@@ -410,36 +410,55 @@ function buildLookup(rows, keyCol, valCol) {
 
 
 // ================================================================
-// WEB APP (optional) — prefer manual runNow + encrypt to Pages.
-// Full snapshot JSON is ~350KB and often fails ContentService /
-// times out (30–90s SQLite parse). Kept for rare debugging only.
+// WEB APP — dashboard Refresh uses ?full=1&callback=… (JSONP)
+// to export wallet SQLite → snapshot (merges finary-balances.json)
+// and return the full JSON to the browser (bypasses CORS).
 // ================================================================
 function doGet(e) {
   try {
     const params = (e && e.parameter) || {};
     const readOnly = String(params.read || '') === '1';
+    const wantFull = String(params.full || '') === '1';
+    const callback = String(params.callback || '').replace(/[^\w.$]/g, '');
+
     if (!readOnly) exportWalletToSheet();
 
     const folder = DriveApp.getFolderById(SQLITE_FOLDER_ID);
     const snapshot = readExistingSnapshot_(folder);
     if (!snapshot) {
-      return jsonOutput_({ ok: false, error: 'No wallet-snapshot.json found after export' });
+      return jsonpOrJson_({ ok: false, error: 'No wallet-snapshot.json found after export' }, callback);
     }
-    // Return a tiny ack — do not stream full snapshot (too large / slow)
-    return jsonOutput_({
+
+    if (wantFull) {
+      // Live Refresh payload — txs + balances (Finary merge happens in writeJsonSnapshot)
+      snapshot.ok = true;
+      snapshot.servedAt = new Date().toISOString();
+      return jsonpOrJson_(snapshot, callback);
+    }
+
+    return jsonpOrJson_({
       ok: true,
       servedAt: new Date().toISOString(),
       lastSync: snapshot.lastSync || null,
       txCount: (snapshot.transactions || []).length,
-      note: 'Export done. Dashboard reads encrypted Pages vault, not this response.',
-    });
+      hasBalances: !!snapshot.balances,
+      note: 'Pass full=1 to receive the snapshot body (used by dashboard Refresh).',
+    }, callback);
   } catch (err) {
-    return jsonOutput_({ ok: false, error: String(err && err.message || err) });
+    const params = (e && e.parameter) || {};
+    const callback = String(params.callback || '').replace(/[^\w.$]/g, '');
+    return jsonpOrJson_({ ok: false, error: String(err && err.message || err) }, callback);
   }
 }
 
-function jsonOutput_(obj) {
+function jsonpOrJson_(obj, callback) {
+  const body = JSON.stringify(obj);
+  if (callback) {
+    return ContentService
+      .createTextOutput(callback + '(' + body + ')')
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
   return ContentService
-    .createTextOutput(JSON.stringify(obj))
+    .createTextOutput(body)
     .setMimeType(ContentService.MimeType.JSON);
 }
