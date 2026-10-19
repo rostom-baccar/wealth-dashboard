@@ -15,9 +15,9 @@ The HTML is public. **Your numbers are not** — they ship as an AES-256-GCM enc
 | `data/wallet-snapshot.json` | **No** — gitignored, local only |
 | `.dashboard-pass` | **No** — gitignored passphrase |
 
-**Unlock:** enter your passphrase once. Optionally **Remember this device** stores the decryption key in that browser’s `localStorage` only (not the passphrase string in transit after unlock). **Lock** clears it.
+**Unlock:** enter your passphrase once. Optionally **Remember this device** stores the passphrase in that browser’s `localStorage` only. **Lock** clears it and hides the entire dashboard shell (not just a dismissible modal).
 
-Other people opening the site see the unlock screen. Fetching `.enc` without the passphrase yields unreadable data.
+Other people opening the site see only the unlock screen — the app UI is not rendered until unlock succeeds. Fetching `.enc` without the passphrase yields unreadable data.
 
 ### Re-encrypt after syncing new data
 
@@ -37,22 +37,25 @@ git add data/wallet-snapshot.enc && git commit -m "Refresh encrypted snapshot" &
 ## Architecture
 
 ```
-wallet app → Drive sqlite
-  → Apps Script → local wallet-snapshot.json (+ Finary merge)
-  → tools/encrypt-snapshot.mjs → wallet-snapshot.enc (GitHub Pages)
-  → browser unlock → decrypt → dashboard
+wallet app → Drive sqlite (+ finary-balances.json from Cursor)
+  → Apps Script web app (Refresh) → live snapshot to browser
+  → also: encrypt → wallet-snapshot.enc (GitHub Pages cold start)
+  → browser unlock (passphrase) → dashboard mounts
 ```
+
+While locked, the dashboard DOM is **not mounted** — only the unlock screen exists.
 
 ## Setup
 
-1. Install `WalletExport.gs`, run `runNow`.
-2. Keep a local `data/wallet-snapshot.json` (or ask Cursor to sync).
-3. Encrypt with `.dashboard-pass` / `tools/encrypt-snapshot.mjs`.
-4. Open the site → unlock with the passphrase → optional Remember this device.
+1. Install `WalletExport.gs`, deploy as Web app (Anyone), paste `/exec` URL in Settings.
+2. Encrypt a cold-start vault: `node tools/encrypt-snapshot.mjs` (see below).
+3. Open the site → unlock with the passphrase → optional Remember this device.
+4. **Refresh** requires the Apps Script URL (rebuilds wallet + merges Finary file).
 
 ## Features
 
-- Encrypted vault unlock (per-device remember)
+- Hard lock + encrypted vault unlock (per-device remember)
+- Live **Refresh** via Apps Script web app (wallet export + Finary balances merge)
 - Net worth hero, Anon blur, EN/FR
 - Savings from wallet income − expenses; PEA monthly from Finary cost basis
 - Gemini AI brief (API key in Settings / localStorage only)

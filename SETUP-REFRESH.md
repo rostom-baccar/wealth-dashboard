@@ -1,27 +1,29 @@
-# Manual export only (no hourly / daily triggers)
+# Live Refresh (required)
 
-## Clear old schedules (once)
+The **Refresh** button rebuilds data from Drive via Apps Script. It does **not** use the static encrypted vault for live updates.
 
-1. Sheet → **Extensions → Apps Script**
-2. Paste latest `WalletExport.gs` → Save
-3. Select function **`removeAutoTriggers`** → Run (authorize if asked)
-4. Reload the Sheet — menu **Wallet → Export now (manual)** appears
+## One-time setup
 
-## When you want fresh wallet data on Drive
+1. Open the Google Sheet → **Extensions → Apps Script**.
+2. Paste the latest [`WalletExport.gs`](./WalletExport.gs) → Save.
+3. **Deploy → New deployment → Web app**
+   - Execute as: **Me**
+   - Who has access: **Anyone**
+4. Copy the `/exec` URL.
+5. Unlock the dashboard → **⚙️ Settings** → paste into **Apps Script web app URL** → Save.
 
-- **Wallet → Export now** in the Sheet, or run `runNow` in Apps Script  
-- Then ask Cursor to sync Finary + re-encrypt `data/wallet-snapshot.enc` for Pages
+## What Refresh does
 
-## Dashboard Refresh button
+1. Calls the web app with `full=1` (JSONP).
+2. Apps Script reads Drive `wallet-database` (SQLite), rebuilds transactions, merges `finary-balances.json`, writes `wallet-snapshot.json`.
+3. Returns the full snapshot to the browser → dashboard updates.
 
-Only reloads + decrypts the encrypted vault already on GitHub Pages.  
-It does **not** call Apps Script (that path was slow and often failed).
+## Finary
 
-### Why the old Refresh felt stuck
+Apps Script cannot log into Finary. It merges whatever is in Drive `finary-balances.json`.
 
-1. **Apps Script full export** parses the whole SQLite file + writes Sheet + JSON → often **30–90s**
-2. **Response too large** (~350KB snapshot) — ContentService / timeouts → request “never comes through”
-3. **Cold start + redirects** on `script.google.com` web apps are flaky from the browser
-4. Even when it worked, it **didn’t update** the encrypted Pages file — so the UI often looked unchanged
+To refresh PEA / Livret A: ask Cursor to **sync Finary balances**, then click **Refresh** (or wait until that file was updated, then Refresh).
 
-Manual export on the Sheet + encrypt/push to Pages is the reliable path.
+## Encrypted vault (GitHub Pages)
+
+`data/wallet-snapshot.enc` is only for cold start after unlock. Live Refresh bypasses it once the web app URL is set.

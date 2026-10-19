@@ -10,6 +10,13 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100%;font-size:14px}
 body{padding:20px;max-width:1100px;margin:0 auto}
+/* Hard lock: dashboard is unmounted while locked — only unlock UI exists */
+body.locked{overflow:hidden;padding:0;max-width:none;background:#0d0f14}
+body.locked #app-mount{display:none!important;visibility:hidden!important;pointer-events:none!important;height:0!important;overflow:hidden!important}
+body.locked #unlock-overlay{display:flex!important}
+body:not(.locked) #unlock-overlay{display:none!important}
+#app-mount:empty{display:none}
+#unlock-overlay{position:fixed;inset:0;background:#0d0f14;z-index:2147483647;align-items:center;justify-content:center;isolation:isolate}
 /* Header */
 .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;flex-wrap:wrap;gap:12px}
 .header-left h1{font-size:22px;font-weight:700;letter-spacing:-.5px}
@@ -225,8 +232,11 @@ body.anon .nw-amount{
 .sav-pea{font-size:11px;color:var(--blue)}
 </style>
 </head>
-<body>
+<body class="locked">
 
+<div id="app-mount"></div>
+<template id="app-shell-template">
+<div id="app-shell">
 <!-- Top bar: title + controls -->
 <div class="header">
   <div class="header-left">
@@ -401,7 +411,67 @@ body.anon .nw-amount{
 </div>
 
 </div><!-- end sections-container -->
+</div><!-- end app-shell -->
 
+
+<!-- Settings: PEE + keys only. PEA/Livret/cost/monthly PEA are Finary-derived. -->
+<div id="modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:#13161e;border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:24px;width:360px;max-width:92vw;max-height:90vh;overflow:auto">
+    <div style="font-size:16px;font-weight:700;margin-bottom:4px">⚙️ Settings</div>
+    <div style="font-size:12px;color:#7a7f9a;margin-bottom:14px;line-height:1.45">
+      PEA, Livret A, cost basis and monthly PEA contribution come from Finary (via the Drive snapshot). Only PEE is manual.
+    </div>
+    <div id="modal-auto-block" style="display:none;margin-bottom:14px;padding:10px 12px;background:#1a1e2a;border-radius:8px;border:1px solid rgba(46,204,143,.25)">
+      <div style="font-size:10px;color:#2ecc8f;font-weight:600;letter-spacing:.5px;margin-bottom:4px">FROM FINARY</div>
+      <div id="modal-auto-summary" style="font-size:12px;color:#f0f2f7"></div>
+    </div>
+    <div id="modal-finary-waiting" style="display:none;margin-bottom:14px;padding:10px 12px;background:#1a1e2a;border-radius:8px;border:1px solid rgba(245,166,35,.3)">
+      <div style="font-size:12px;color:#f5a623;line-height:1.45">No Finary balances in the snapshot yet. Ask Cursor to sync Finary, run Apps Script <code>runNow</code>, then Refresh.</div>
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">PEE (Epsor) € — no connector</label>
+      <input id="modal-pee" type="number" step="0.01" style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:#f0f2f7;font-size:13px">
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">Gemini API key (browser only — for AI summary)</label>
+      <input id="modal-gemini" type="password" autocomplete="off" placeholder="AIza… or AQ.…" style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:#f0f2f7;font-size:13px">
+    </div>
+    <div style="margin-bottom:20px">
+      <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">Apps Script web app URL (required for live Refresh)</label>
+      <input id="modal-export-url" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec" style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:#f0f2f7;font-size:12px">
+      <div style="font-size:10px;color:#7a7f9a;margin-top:4px;line-height:1.4">Required. Deploy latest WalletExport.gs as Web app (Execute as Me, Anyone). Refresh rebuilds from Drive sqlite and merges finary-balances.json.</div>
+    </div>
+    <input id="modal-income" type="hidden" value="">
+    <div style="display:flex;gap:8px">
+      <button type="button" onclick="saveBalancesFromModal()" style="flex:1;background:#4a9eff;color:#fff;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:600;cursor:pointer">Save</button>
+      <button type="button" onclick="hideBalanceModal()" style="flex:1;background:#1a1e2a;color:#7a7f9a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;font-size:13px;cursor:pointer">Cancel</button>
+    </div>
+  </div>
+</div>
+
+</template>
+
+<!-- Unlock vault — only UI while locked (dashboard unmounted) -->
+<div id="unlock-overlay">
+  <div style="background:#13161e;border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:28px;width:380px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.5)"
+       onclick="event.stopPropagation()">
+    <div style="font-size:18px;font-weight:700;margin-bottom:6px">🔐 Unlock dashboard</div>
+    <div style="font-size:12px;color:#7a7f9a;margin-bottom:16px;line-height:1.5">
+      Dashboard is locked. Nothing is visible until you enter the correct passphrase.
+      Check <b>Remember this device</b> to skip this next time on this browser only.
+    </div>
+    <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">Passphrase</label>
+    <input id="unlock-pass" type="password" autocomplete="current-password"
+      onkeydown="if(event.key==='Enter')submitUnlock()"
+      style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px 12px;color:#f0f2f7;font-size:14px;margin-bottom:10px">
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#7a7f9a;margin-bottom:12px;cursor:pointer">
+      <input type="checkbox" id="unlock-remember" checked> Remember this device
+    </label>
+    <div id="unlock-error" style="font-size:12px;color:#e55353;min-height:18px;margin-bottom:8px"></div>
+    <button type="button" id="unlock-btn" onclick="submitUnlock()"
+      style="width:100%;background:#4a9eff;color:#fff;border:none;border-radius:8px;padding:12px;font-size:14px;font-weight:600;cursor:pointer">Unlock</button>
+  </div>
+</div>
 <script>
 // ═══════════════════════════════════════════════════════
 // i18n
@@ -680,18 +750,101 @@ async function decryptVaultBundle(bundle, passphrase) {
   return JSON.parse(text);
 }
 
+function clearSensitiveState() {
+  STATE.pea = 0;
+  STATE.livretA = 0;
+  STATE.pee = 0;
+  STATE.monthlyNetIncome = 0;
+  STATE.peaMonthly = 0;
+  STATE.peaMonthsActive = 0;
+  STATE.peaStartedAt = null;
+  STATE.monthlyCostBasis = 0;
+  STATE.transactions = [];
+  STATE.savingsData = [];
+  STATE.finaryOk = false;
+  STATE.driveOk = false;
+  STATE.savingsOk = false;
+  STATE.balancesSource = null;
+  STATE.balanceDate = null;
+  STATE.lastSnapshotSync = null;
+  STATE.snapshotFetchError = null;
+  STATE.snapshotSource = null;
+  if (typeof charts === 'object' && charts) {
+    Object.keys(charts).forEach(k => {
+      try { charts[k]?.destroy?.(); } catch (_) {}
+      delete charts[k];
+    });
+  }
+}
+
+function ensureUnlockOverlay() {
+  let overlay = document.getElementById('unlock-overlay');
+  if (overlay) return overlay;
+  overlay = document.createElement('div');
+  overlay.id = 'unlock-overlay';
+  overlay.innerHTML = `<div style="background:#13161e;border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:28px;width:380px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.5)" onclick="event.stopPropagation()">
+    <div style="font-size:18px;font-weight:700;margin-bottom:6px">🔐 Unlock dashboard</div>
+    <div style="font-size:12px;color:#7a7f9a;margin-bottom:16px;line-height:1.5">Dashboard is locked. Nothing is available until you enter the correct passphrase.</div>
+    <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">Passphrase</label>
+    <input id="unlock-pass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')submitUnlock()"
+      style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px 12px;color:#f0f2f7;font-size:14px;margin-bottom:10px">
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#7a7f9a;margin-bottom:12px;cursor:pointer">
+      <input type="checkbox" id="unlock-remember" checked> Remember this device
+    </label>
+    <div id="unlock-error" style="font-size:12px;color:#e55353;min-height:18px;margin-bottom:8px"></div>
+    <button type="button" id="unlock-btn" onclick="submitUnlock()"
+      style="width:100%;background:#4a9eff;color:#fff;border:none;border-radius:8px;padding:12px;font-size:14px;font-weight:600;cursor:pointer">Unlock</button>
+  </div>`;
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function unmountDashboard() {
+  const mount = document.getElementById('app-mount');
+  if (mount) mount.innerHTML = '';
+  if (typeof charts === 'object' && charts) {
+    Object.keys(charts).forEach(k => {
+      try { charts[k]?.destroy?.(); } catch (_) {}
+      delete charts[k];
+    });
+  }
+}
+
+function mountDashboard() {
+  const mount = document.getElementById('app-mount');
+  const tpl = document.getElementById('app-shell-template');
+  if (!mount || !tpl) throw new Error('Dashboard template missing');
+  if (document.getElementById('app-shell')) return;
+  mount.innerHTML = '';
+  mount.appendChild(tpl.content.cloneNode(true));
+  initDragAndDrop();
+  const anonTog = document.getElementById('tog-anon');
+  if (anonTog) {
+    anonTog.checked = anonMode;
+    document.body.classList.toggle('anon', anonMode);
+    const lbl = document.getElementById('anon-lbl');
+    if (lbl) lbl.textContent = anonMode ? T('anon-on') : T('anon-off');
+  }
+  const langTog = document.getElementById('tog-lang');
+  if (langTog) langTog.checked = lang === 'en';
+}
+
+function setLockedUI(locked) {
+  document.body.classList.toggle('locked', !!locked);
+  if (locked) {
+    unmountDashboard();
+    ensureUnlockOverlay();
+  }
+}
+
 function lockVault() {
   vaultPass = null;
   vaultUnlocked = false;
   localStorage.removeItem(LS_VAULT_PASS);
-  // legacy cleanup
   localStorage.removeItem('dashboard_vault_jwk');
-  STATE.transactions = [];
-  STATE.driveOk = false;
-  STATE.finaryOk = false;
-  STATE.savingsOk = false;
+  clearSensitiveState();
+  setLockedUI(true);
   showUnlockModal();
-  updateStatus();
 }
 
 async function fetchEncryptedSnapshot() {
@@ -707,6 +860,9 @@ async function unlockWithPassphrase(passphrase, remember) {
   vaultUnlocked = true;
   if (remember) localStorage.setItem(LS_VAULT_PASS, passphrase);
   else localStorage.removeItem(LS_VAULT_PASS);
+  mountDashboard();
+  setLockedUI(false);
+  loadBalancesFromStorage();
   applySnapshotData(data);
   STATE.snapshotSource = 'vault';
   hideUnlockModal();
@@ -724,28 +880,33 @@ async function tryUnlockFromDevice() {
     const data = await decryptVaultBundle(bundle, pass);
     vaultPass = pass;
     vaultUnlocked = true;
+    mountDashboard();
+    setLockedUI(false);
+    loadBalancesFromStorage();
     applySnapshotData(data);
     STATE.snapshotSource = 'vault-device';
     return true;
   } catch (e) {
     console.warn('Device unlock failed — passphrase required:', e.message);
     localStorage.removeItem(LS_VAULT_PASS);
+    vaultUnlocked = false;
+    setLockedUI(true);
     return false;
   }
 }
 
 function showUnlockModal(errMsg) {
-  const el = document.getElementById('unlock-overlay');
-  if (!el) return;
-  el.style.display = 'flex';
+  vaultUnlocked = false;
+  setLockedUI(true);
+  ensureUnlockOverlay();
   const err = document.getElementById('unlock-error');
   if (err) err.textContent = errMsg || '';
   const input = document.getElementById('unlock-pass');
   if (input) { input.value = ''; setTimeout(() => input.focus(), 50); }
 }
 function hideUnlockModal() {
-  const el = document.getElementById('unlock-overlay');
-  if (el) el.style.display = 'none';
+  const err = document.getElementById('unlock-error');
+  if (err) err.textContent = '';
 }
 async function submitUnlock() {
   const pass = (document.getElementById('unlock-pass')?.value || '').trim();
@@ -758,9 +919,31 @@ async function submitUnlock() {
     await unlockWithPassphrase(pass, remember);
   } catch (e) {
     console.warn(e);
+    vaultUnlocked = false;
+    setLockedUI(true);
     if (err) err.textContent = 'Wrong passphrase or corrupted vault file';
   }
   if (btn) { btn.disabled = false; btn.textContent = 'Unlock'; }
+}
+
+/** While locked: keep body.locked, unlock UI present, dashboard unmounted. */
+function guardUnlockOverlay() {
+  const tick = () => {
+    if (vaultUnlocked) return;
+    if (!document.body.classList.contains('locked')) document.body.classList.add('locked');
+    ensureUnlockOverlay();
+    const mount = document.getElementById('app-mount');
+    if (mount && mount.childNodes.length) unmountDashboard();
+    document.querySelectorAll('#app-shell, #modal-overlay').forEach(el => {
+      if (!vaultUnlocked) el.remove();
+    });
+  };
+  tick();
+  new MutationObserver(tick).observe(document.documentElement, { subtree: true, childList: true, attributes: true });
+  setInterval(tick, 500);
+  document.addEventListener('keydown', e => {
+    if (!vaultUnlocked && e.key === 'Escape') e.preventDefault();
+  });
 }
 
 function applySnapshotData(data) {
@@ -842,6 +1025,7 @@ async function fetchSavings() {
 }
 
 function showBalanceModal() {
+  if (!vaultUnlocked) { showUnlockModal(); return; }
   const hasFinary = !!(STATE.pea || STATE.livretA);
   const auto = document.getElementById('modal-auto-block');
   const waiting = document.getElementById('modal-finary-waiting');
@@ -1704,6 +1888,7 @@ async function generateAiSummary(txs, force=false) {
 }
 
 async function forceAiRefresh() {
+  if (!vaultUnlocked) { showUnlockModal(); return; }
   await generateAiSummary(STATE.transactions, true);
 }
 
@@ -1755,7 +1940,52 @@ function renderAll(txs) {
 }
 
 // ═══════════════════════════════════════════════════════
-// Main refresh
+// Live sync via Apps Script web app (JSONP — avoids CORS)
+// Runs export + returns full snapshot (wallet txs + Finary balances)
+// ═══════════════════════════════════════════════════════
+function getExportWebAppUrl() {
+  return (localStorage.getItem(LS_EXPORT_URL) || '').trim().replace(/\/$/, '');
+}
+
+function jsonpRequest(url, timeoutMs = 120000) {
+  return new Promise((resolve, reject) => {
+    const cb = '_wdCb_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
+    const script = document.createElement('script');
+    let settled = false;
+    const timer = setTimeout(() => finish(new Error('Apps Script timeout — export can take up to ~90s')), timeoutMs);
+    function cleanup() {
+      clearTimeout(timer);
+      try { delete window[cb]; } catch (_) { window[cb] = undefined; }
+      script.remove();
+    }
+    function finish(err, data) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (err) reject(err);
+      else resolve(data);
+    }
+    window[cb] = (data) => finish(null, data);
+    script.onerror = () => finish(new Error('Apps Script script load failed'));
+    const sep = url.includes('?') ? '&' : '?';
+    script.src = url + sep + 'callback=' + encodeURIComponent(cb) + '&t=' + Date.now();
+    document.head.appendChild(script);
+  });
+}
+
+async function fetchLiveSnapshotFromAppsScript() {
+  const base = getExportWebAppUrl();
+  if (!base) throw new Error('No Apps Script URL — set it in ⚙️ Settings');
+  // full=1 → run export (wallet + merge finary-balances.json) and return snapshot
+  const url = base + (base.includes('?') ? '&' : '?') + 'full=1';
+  const data = await jsonpRequest(url, 120000);
+  if (!data || data.ok === false) throw new Error((data && data.error) || 'Apps Script error');
+  if (!Array.isArray(data.transactions)) throw new Error('Apps Script response missing transactions');
+  return data;
+}
+
+// ═══════════════════════════════════════════════════════
+// Main refresh — live Apps Script first, vault fallback
 // ═══════════════════════════════════════════════════════
 async function refreshAll() {
   if (!vaultUnlocked) {
@@ -1765,38 +1995,54 @@ async function refreshAll() {
   const btn = document.getElementById('refresh-btn');
   const icon = document.getElementById('refresh-icon');
   btn.classList.add('refreshing'); icon.className = 'spin'; icon.textContent = '↻';
-  document.getElementById('status-bar').innerHTML = `<span class="pill pill-load">${T('fetching')}</span>`;
+  const status = document.getElementById('status-bar');
 
-  // Fast path: re-fetch + decrypt vault only (no Apps Script — that was the slow/flaky path)
-  STATE.driveOk = false;
-  await fetchTransactions();
-  await fetchSavings();
-  renderAll(STATE.transactions);
+  if (!getExportWebAppUrl()) {
+    btn.classList.remove('refreshing'); icon.className = ''; icon.textContent = '↻';
+    status.innerHTML = `<span class="pill pill-err">Set Apps Script web app URL in ⚙️ Settings — required for live Refresh</span>`;
+    showBalanceModal();
+    return;
+  }
+
+  status.innerHTML = `<span class="pill pill-load">Rebuilding from Drive wallet + merging Finary…</span>`;
+  try {
+    const data = await fetchLiveSnapshotFromAppsScript();
+    applySnapshotData(data);
+    STATE.snapshotSource = 'apps-script-live';
+    STATE.driveOk = true;
+    await fetchSavings();
+    renderAll(STATE.transactions);
+    status.innerHTML = [
+      `<span class="pill pill-ok">Live sync ✓</span>`,
+      `<span class="pill ${STATE.finaryOk?'pill-ok':'pill-err'}">${STATE.finaryOk?'Finary ✓':'Finary ✗ (ask Cursor to sync)'}</span>`,
+      `<span class="pill pill-ok">${STATE.transactions.length} ${T('tx')}</span>`,
+      STATE.lastSnapshotSync ? `<span class="pill pill-ok">${new Date(STATE.lastSnapshotSync).toLocaleString()}</span>` : '',
+    ].filter(Boolean).join('');
+    generateAiSummary(STATE.transactions, true).catch(() => {});
+  } catch (e) {
+    const msg = e.message || String(e);
+    console.warn('Live refresh failed:', msg);
+    status.innerHTML = `<span class="pill pill-err" title="${msg.replace(/"/g,'&quot;')}">Live sync failed: ${msg}</span>`;
+  }
   btn.classList.remove('refreshing'); icon.className = ''; icon.textContent = '↻';
-  generateAiSummary(STATE.transactions, false).catch(() => {});
 }
 
 // ═══════════════════════════════════════════════════════
 // Init
 // ═══════════════════════════════════════════════════════
 (async () => {
-  loadBalancesFromStorage();
-  initDragAndDrop();
-  const anonTog = document.getElementById('tog-anon');
-  if (anonTog) {
-    anonTog.checked = anonMode;
-    document.body.classList.toggle('anon', anonMode);
-    document.getElementById('anon-lbl').textContent = anonMode ? T('anon-on') : T('anon-off');
-  }
-  // Encrypted vault: try this-device key, else ask for passphrase
+  vaultUnlocked = false;
+  clearSensitiveState();
+  setLockedUI(true);
+  guardUnlockOverlay();
   const ok = await tryUnlockFromDevice();
   if (ok) {
     await fetchSavings();
     renderAll(STATE.transactions);
     generateAiSummary(STATE.transactions, false).catch(() => {});
   } else {
+    clearSensitiveState();
     showUnlockModal();
-    updateStatus();
   }
 })();
 
@@ -1849,59 +2095,5 @@ function initDragAndDrop() {
 }
 </script>
 
-<!-- Settings: PEE + keys only. PEA/Livret/cost/monthly PEA are Finary-derived. -->
-<div id="modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
-  <div style="background:#13161e;border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:24px;width:360px;max-width:92vw;max-height:90vh;overflow:auto">
-    <div style="font-size:16px;font-weight:700;margin-bottom:4px">⚙️ Settings</div>
-    <div style="font-size:12px;color:#7a7f9a;margin-bottom:14px;line-height:1.45">
-      PEA, Livret A, cost basis and monthly PEA contribution come from Finary (via the Drive snapshot). Only PEE is manual.
-    </div>
-    <div id="modal-auto-block" style="display:none;margin-bottom:14px;padding:10px 12px;background:#1a1e2a;border-radius:8px;border:1px solid rgba(46,204,143,.25)">
-      <div style="font-size:10px;color:#2ecc8f;font-weight:600;letter-spacing:.5px;margin-bottom:4px">FROM FINARY</div>
-      <div id="modal-auto-summary" style="font-size:12px;color:#f0f2f7"></div>
-    </div>
-    <div id="modal-finary-waiting" style="display:none;margin-bottom:14px;padding:10px 12px;background:#1a1e2a;border-radius:8px;border:1px solid rgba(245,166,35,.3)">
-      <div style="font-size:12px;color:#f5a623;line-height:1.45">No Finary balances in the snapshot yet. Ask Cursor to sync Finary, run Apps Script <code>runNow</code>, then Refresh.</div>
-    </div>
-    <div style="margin-bottom:12px">
-      <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">PEE (Epsor) € — no connector</label>
-      <input id="modal-pee" type="number" step="0.01" style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:#f0f2f7;font-size:13px">
-    </div>
-    <div style="margin-bottom:12px">
-      <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">Gemini API key (browser only — for AI summary)</label>
-      <input id="modal-gemini" type="password" autocomplete="off" placeholder="AIza… or AQ.…" style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:#f0f2f7;font-size:13px">
-    </div>
-    <div style="margin-bottom:20px">
-      <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">Apps Script web app URL (optional, unused by Refresh)</label>
-      <input id="modal-export-url" type="url" autocomplete="off" placeholder="optional — leave empty" style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:#f0f2f7;font-size:12px">
-    </div>
-    <input id="modal-income" type="hidden" value="">
-    <div style="display:flex;gap:8px">
-      <button type="button" onclick="saveBalancesFromModal()" style="flex:1;background:#4a9eff;color:#fff;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:600;cursor:pointer">Save</button>
-      <button type="button" onclick="hideBalanceModal()" style="flex:1;background:#1a1e2a;color:#7a7f9a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;font-size:13px;cursor:pointer">Cancel</button>
-    </div>
-  </div>
-</div>
-
-<!-- Unlock vault (required — numbers are AES-GCM encrypted on the public site) -->
-<div id="unlock-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:2000;align-items:center;justify-content:center">
-  <div style="background:#13161e;border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:28px;width:380px;max-width:92vw">
-    <div style="font-size:18px;font-weight:700;margin-bottom:6px">🔐 Unlock dashboard</div>
-    <div style="font-size:12px;color:#7a7f9a;margin-bottom:16px;line-height:1.5">
-      The site is public, but your numbers are encrypted. Enter your passphrase.
-      Check <b>Remember this device</b> to skip this next time on this browser only.
-    </div>
-    <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">Passphrase</label>
-    <input id="unlock-pass" type="password" autocomplete="current-password"
-      onkeydown="if(event.key==='Enter')submitUnlock()"
-      style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px 12px;color:#f0f2f7;font-size:14px;margin-bottom:10px">
-    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#7a7f9a;margin-bottom:12px;cursor:pointer">
-      <input type="checkbox" id="unlock-remember" checked> Remember this device
-    </label>
-    <div id="unlock-error" style="font-size:12px;color:#e55353;min-height:18px;margin-bottom:8px"></div>
-    <button type="button" id="unlock-btn" onclick="submitUnlock()"
-      style="width:100%;background:#4a9eff;color:#fff;border:none;border-radius:8px;padding:12px;font-size:14px;font-weight:600;cursor:pointer">Unlock</button>
-  </div>
-</div>
 </body>
 </html>
