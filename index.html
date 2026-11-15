@@ -233,11 +233,11 @@ body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
   <section class="section" id="zone-trajectory">
     <div class="section-head">
       <h2>PEA trajectory</h2>
-      <p>Contributions so far, then a simple forward path — gross and estimated net if withdrawn.</p>
+      <p>Contributions so far, then a simple forward path — gross and net after the 5-year mark (PS on gain).</p>
     </div>
     <div class="traj-toggle" role="group" aria-label="Projection view">
       <button type="button" class="on" id="tog-gross" onclick="setProjMode('gross')">Gross</button>
-      <button type="button" id="tog-net" onclick="setProjMode('net')">Net withdrawable</button>
+      <button type="button" id="tog-net" onclick="setProjMode('net')">Net after 5y</button>
       <button type="button" id="tog-both" onclick="setProjMode('both')">Both</button>
     </div>
     <div class="chart-wrap"><canvas id="trajChart"></canvas></div>
@@ -331,10 +331,11 @@ function yearsHeld(fromIso) {
 }
 
 /** Illustrative FR PEA tax on gain only — not legal advice. */
-function peaTaxEstimate(value, costBasis, startedAt, asOfYears) {
+function peaTaxEstimate(value, costBasis, startedAt, asOfYears, { afterFiveYears = false } = {}) {
   const gain = Math.max(0, (value || 0) - (costBasis || 0));
   const years = asOfYears != null ? asOfYears : yearsHeld(startedAt);
-  const rate = years >= 5 ? 0.172 : 0.30;
+  // Default display: net if withdrawn after the 5-year mark (PS 17.2% on gain).
+  const rate = afterFiveYears || years >= 5 ? 0.172 : 0.30;
   const tax = gain * rate;
   return {
     value: value || 0,
@@ -344,8 +345,13 @@ function peaTaxEstimate(value, costBasis, startedAt, asOfYears) {
     rate,
     tax,
     net: (value || 0) - tax,
-    regime: years >= 5 ? 'PS 17.2%' : 'PFU ~30%',
+    regime: rate >= 0.25 ? 'PFU ~30%' : 'PS 17.2%',
   };
+}
+
+/** Net PEA assuming withdrawal only after 5 years (PS on gain). */
+function peaNetAfter5y(value, costBasis) {
+  return peaTaxEstimate(value, costBasis, null, 5, { afterFiveYears: true });
 }
 
 function b64ToBytes(b64) {
@@ -673,8 +679,9 @@ function netWorth() {
 
 function renderHero() {
   const nw = netWorth();
-  const tax = peaTaxEstimate(STATE.pea, STATE.monthlyCostBasis, STATE.peaStartedAt);
-  const yearsLeft = Math.max(0, 5 - tax.years);
+  const held = yearsHeld(STATE.peaStartedAt);
+  const tax = peaNetAfter5y(STATE.pea, STATE.monthlyCostBasis);
+  const yearsLeft = Math.max(0, 5 - held);
   document.getElementById('nw-hero-val').textContent = nw ? fmt(nw) : '—';
   const balAge = STATE.balanceDate ? new Date(STATE.balanceDate) : null;
   const ageTxt = balAge
@@ -682,7 +689,7 @@ function renderHero() {
     : 'Balances pending';
   document.getElementById('hero-support').textContent =
     STATE.pea
-      ? `PEA ${fmt(STATE.pea)} gross → ~${fmt(tax.net)} net if withdrawn today (${tax.regime} on ${fmt(tax.gain)} gain). ${yearsLeft > 0.05 ? `${yearsLeft.toFixed(1)}y to 5-year regime.` : 'Past 5 years — PS only on gain.'} ${ageTxt}.`
+      ? `PEA ${fmt(STATE.pea)} gross → ~${fmt(tax.net)} net after 5 years (PS 17.2% on ${fmt(tax.gain)} gain; capital untaxed). ${yearsLeft > 0.05 ? `${yearsLeft.toFixed(1)}y left to that mark.` : 'Already past 5 years.'} ${ageTxt}.`
       : `${ageTxt}. Ask Cursor to sync Finary if empty.`;
 
   const bits = [
@@ -788,14 +795,14 @@ function projectPea(years = 10, annualRate = 0.07) {
   let value = STATE.pea || 0;
   let cost = STATE.monthlyCostBasis || 0;
   const startYears = yearsHeld(STATE.peaStartedAt);
-  const out = [{ year: 0, gross: value, net: peaTaxEstimate(value, cost, STATE.peaStartedAt, startYears).net, cost }];
+  // Net always models withdrawal after the 5-year mark (PS 17.2% on gain).
+  const out = [{ year: 0, gross: value, net: peaNetAfter5y(value, cost).net, cost }];
   for (let y = 1; y <= years; y++) {
     for (let m = 0; m < 12; m++) {
       value = value * (1 + r) + monthly;
       cost += monthly;
     }
-    const held = startYears + y;
-    const est = peaTaxEstimate(value, cost, STATE.peaStartedAt, held);
+    const est = peaNetAfter5y(value, cost);
     out.push({ year: y, gross: value, net: est.net, cost, regime: est.regime });
   }
   return out;
@@ -858,7 +865,7 @@ function drawTrajectory() {
   }
   if (projMode === 'net' || projMode === 'both') {
     datasets.push({
-      label: 'Projected net',
+      label: 'Net after 5y',
       data: padProj(net),
       borderColor: '#ffd84d',
       borderWidth: 2,
@@ -887,12 +894,12 @@ function drawTrajectory() {
     },
   });
 
-  const tax = peaTaxEstimate(STATE.pea, STATE.monthlyCostBasis, STATE.peaStartedAt);
-  const y5 = proj.find(p => (tax.years + p.year) >= 5) || proj[proj.length - 1];
+  const held = yearsHeld(STATE.peaStartedAt);
+  const y5 = proj.find(p => (held + p.year) >= 5) || proj[proj.length - 1];
   document.getElementById('traj-note').textContent =
-    `Assumes ~${fmt(STATE.peaMonthly || 700)}/mo and 7% annualized. Tax model: PFU ~30% on gain before 5 years, then PS 17.2% only — illustrative, not advice. ` +
+    `Assumes ~${fmt(STATE.peaMonthly || 700)}/mo and 7% annualized. Net = after 5-year mark (PS 17.2% on gain only) — illustrative, not advice. ` +
     (STATE.peaStartedAt
-      ? `Opened ${STATE.peaStartedAt}. At +${y5.year}y projected gross ~${fmt(y5.gross)}, net ~${fmt(y5.net)}.`
+      ? `Opened ${STATE.peaStartedAt}. At +${y5.year}y projected gross ~${fmt(y5.gross)}, net after 5y ~${fmt(y5.net)}.`
       : '');
 }
 
@@ -1040,11 +1047,12 @@ async function generateAiSummary(txs, force = false) {
   if (btn) { btn.textContent = '…'; btn.disabled = true; }
   el.innerHTML = `<span class="ai-loading">Generating brief…</span>`;
 
-  const tax = peaTaxEstimate(STATE.pea, STATE.monthlyCostBasis, STATE.peaStartedAt);
+  const tax = peaNetAfter5y(STATE.pea, STATE.monthlyCostBasis);
+  const heldYrs = yearsHeld(STATE.peaStartedAt);
   const month = monthBucket(txs || []);
   const exp = month.filter(isExpenseTx).reduce((s, t) => s + Math.abs(t.amount), 0);
   const inc = month.filter(isIncomeTx).reduce((s, t) => s + Math.abs(+t.amount || 0), 0);
-  const local = `**${fmt(netWorth())} net — PEA ${fmt(STATE.pea)} (~${fmt(tax.net)} net)**\n- Gain ${fmt(tax.gain)} · ${tax.regime} · ${tax.years.toFixed(1)}y held\n- This month: income ${fmt(inc)} / spend ${fmt(exp)}\n- Livret A ${fmt(STATE.livretA)} · PEE ${fmt(STATE.pee || 0)}\n- **Today:** keep the ~${fmt(STATE.peaMonthly || 700)} PEA DCA and watch spend pace vs income`;
+  const local = `**${fmt(netWorth())} net — PEA ${fmt(STATE.pea)} (~${fmt(tax.net)} after 5y)**\n- Gain ${fmt(tax.gain)} · PS 17.2% after 5y · ${heldYrs.toFixed(1)}y held so far\n- This month: income ${fmt(inc)} / spend ${fmt(exp)}\n- Livret A ${fmt(STATE.livretA)} · PEE ${fmt(STATE.pee || 0)}\n- **Today:** keep the ~${fmt(STATE.peaMonthly || 700)} PEA DCA and watch spend pace vs income`;
   const apiKey = (localStorage.getItem(LS_GEMINI) || '').trim();
 
   const finishLocal = () => { el.innerHTML = renderAiHtml(local); setAiCache(local); };
@@ -1057,7 +1065,7 @@ async function generateAiSummary(txs, force = false) {
   }
 
   try {
-    const prompt = `Short personal-finance brief for Rostom. English, punchy. Bold key €. 1 headline + 4 bullets + one Today's action.\nNW ${netWorth()} PEA ${STATE.pea} cost ${STATE.monthlyCostBasis} netPEA ${tax.net} livret ${STATE.livretA} pee ${STATE.pee} monthInc ${inc} monthExp ${exp} peaMo ${STATE.peaMonthly}`;
+    const prompt = `Short personal-finance brief for Rostom. English, punchy. Bold key €. 1 headline + 4 bullets + one Today's action. PEA net figures are after the 5-year mark (PS 17.2% on gain), not early withdrawal.\nNW ${netWorth()} PEA ${STATE.pea} cost ${STATE.monthlyCostBasis} netPEA_after5y ${tax.net} livret ${STATE.livretA} pee ${STATE.pee} monthInc ${inc} monthExp ${exp} peaMo ${STATE.peaMonthly}`;
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
     const res = await fetch(url, {
       method: 'POST',
