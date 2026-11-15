@@ -305,12 +305,15 @@ body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
 .boost-card span{display:block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
 .boost-card strong{display:block;margin-top:8px;font-family:var(--mono);font-size:20px;font-weight:600;color:var(--gold)}
 .boost-card em{display:block;margin-top:6px;font-style:normal;font-size:11px;color:var(--muted);line-height:1.35}
-.range-row,.traj-toggle{display:inline-flex;gap:4px;margin-bottom:12px;padding:4px;border-radius:12px;border:1px solid var(--line);background:rgba(16,28,44,.6);flex-wrap:wrap}
-.range-row button,.traj-toggle button{
+.range-row,.traj-toggle,.chart-pane-tabs{display:inline-flex;gap:4px;margin-bottom:12px;padding:4px;border-radius:12px;border:1px solid var(--line);background:rgba(16,28,44,.6);flex-wrap:wrap}
+.range-row button,.traj-toggle button,.chart-pane-tabs button{
   border:0;background:transparent;padding:8px 12px;border-radius:9px;
   font:600 11px/1 var(--font);letter-spacing:.04em;text-transform:uppercase;color:var(--muted);cursor:pointer;
 }
-.range-row button.on,.traj-toggle button.on{background:var(--aegean);color:var(--night)}
+.range-row button.on,.traj-toggle button.on,.chart-pane-tabs button.on{background:var(--aegean);color:var(--night)}
+.chart-pane{display:none}
+.chart-pane.on{display:block;animation:fade .28s ease both}
+.chart-block{margin-top:6px}
 .muted{color:var(--muted);font-size:13px;line-height:1.5}
 .budget-row{margin:12px 0 16px}
 .budget-head{display:flex;justify-content:space-between;gap:10px;font-size:13px;font-weight:600;margin-bottom:6px}
@@ -403,6 +406,52 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
   </nav>
   <section class="tab-panel on" id="panel-overview">
     <div class="section-head">
+      <h2>Total wealth</h2>
+      <p>Overall net worth — existing trail and a forward playground. Switch panes instead of stacking charts.</p>
+    </div>
+    <div class="chart-pane-tabs" role="tablist" aria-label="Wealth chart view">
+      <button type="button" class="on" data-pane-for="wealth" data-pane="existing" onclick="setChartPane('wealth','existing')">Existing</button>
+      <button type="button" data-pane-for="wealth" data-pane="future" onclick="setChartPane('wealth','future')">Future</button>
+    </div>
+    <div class="chart-pane on" data-chart-pane="wealth" data-pane="existing">
+      <div class="range-row" role="group" aria-label="Wealth chart range"><button type="button" data-range="1M" onclick="setChartRange('1M')">1M</button><button type="button" data-range="3M" onclick="setChartRange('3M')">3M</button><button type="button" data-range="1Y" onclick="setChartRange('1Y')">1Y</button><button type="button" data-range="3Y" onclick="setChartRange('3Y')">3Y</button><button type="button" data-range="5Y" onclick="setChartRange('5Y')">5Y</button><button type="button" data-range="Max" onclick="setChartRange('Max')">Max</button></div>
+      <div class="chart-style-bar" data-chart-style="nwHist">
+        <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('nwHist')"> Discrete</label>
+        <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
+          <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
+          <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('nwHist')">
+        </label>
+      </div>
+      <div class="chart-wrap"><canvas id="nwHistChart"></canvas></div>
+      <p class="traj-note" id="nw-hist-note"></p>
+    </div>
+    <div class="chart-pane" data-chart-pane="wealth" data-pane="future">
+      <div class="proj-controls">
+        <label class="proj-slider">
+          <span>Monthly invest <strong data-proj-monthly-val>€700</strong></span>
+          <input type="range" data-proj-monthly min="0" max="2000" step="50" value="700" oninput="onProjControlsChange()">
+        </label>
+        <label class="proj-slider">
+          <span>Horizon <strong data-proj-years-val>10y</strong></span>
+          <input type="range" data-proj-years min="1" max="30" step="1" value="10" oninput="onProjControlsChange()">
+        </label>
+        <label class="proj-slider">
+          <span>Growth (selected) <strong data-proj-rate-val>7%</strong></span>
+          <input type="range" data-proj-rate min="0" max="15" step="0.5" value="7" oninput="onProjControlsChange()">
+        </label>
+      </div>
+      <div class="chart-style-bar" data-chart-style="nwProj">
+        <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('nwProj')"> Discrete</label>
+        <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
+          <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
+          <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('nwProj')">
+        </label>
+      </div>
+      <div class="chart-wrap"><canvas id="nwProjChart"></canvas></div>
+      <p class="traj-note" id="nw-proj-note"></p>
+    </div>
+
+    <div class="section-head" style="margin-top:28px">
       <h2>How you're doing</h2>
       <p>Frequent check-ins: growth, expected PEA, and what you saved.</p>
     </div>
@@ -414,7 +463,6 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
       <button type="button" class="ai-refresh" id="ai-refresh-btn" onclick="forceAiRefresh()" title="Regenerate">↻</button>
       <div id="ai-body"><span class="ai-loading">…</span></div>
     </div>
-    <p class="muted" style="margin-top:18px">Open the <button type="button" class="btn" onclick="setTab('pea')" style="display:inline-block;padding:6px 10px">PEA</button> tab for per-ETF performance, projections, and chart ranges (1M→Max, default 1Y).</p>
   </section>
 
   <section class="tab-panel" id="panel-spend">
@@ -445,59 +493,60 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
   <section class="tab-panel" id="panel-pea">
     <div class="section-head">
       <h2>PEA</h2>
-      <p>Per-fund performance, real funding history, then a separate playground for projections.</p>
+      <p>Per-fund performance, then Existing funding history or Future projections — one chart at a time.</p>
     </div>
     <div id="pea-tab-boost" class="tab-boost" style="display:none"></div>
     <div id="pea-holdings" style="margin-bottom:18px"></div>
 
-    <div class="section-head" style="margin-top:8px">
-      <h2 style="font-size:18px">Funding history</h2>
-      <p>Cumulative versements and today’s value — no projections, so the slope stays honest.</p>
+    <div class="chart-pane-tabs" role="tablist" aria-label="PEA chart view">
+      <button type="button" class="on" data-pane-for="pea" data-pane="existing" onclick="setChartPane('pea','existing')">Existing</button>
+      <button type="button" data-pane-for="pea" data-pane="future" onclick="setChartPane('pea','future')">Future</button>
     </div>
-    <div class="range-row" role="group" aria-label="Chart range"><button type="button" data-range="1M" onclick="setChartRange('1M')">1M</button><button type="button" data-range="3M" onclick="setChartRange('3M')">3M</button><button type="button" data-range="1Y" onclick="setChartRange('1Y')">1Y</button><button type="button" data-range="3Y" onclick="setChartRange('3Y')">3Y</button><button type="button" data-range="5Y" onclick="setChartRange('5Y')">5Y</button><button type="button" data-range="Max" onclick="setChartRange('Max')">Max</button></div>
-    <div class="chart-style-bar" data-chart-style="peaHist">
-      <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('peaHist')"> Discrete</label>
-      <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
-        <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
-        <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('peaHist')">
-      </label>
+    <div class="chart-pane on" data-chart-pane="pea" data-pane="existing">
+      <p class="muted" style="margin-bottom:10px">Cumulative versements and today’s value — no projections.</p>
+      <div class="range-row" role="group" aria-label="Chart range"><button type="button" data-range="1M" onclick="setChartRange('1M')">1M</button><button type="button" data-range="3M" onclick="setChartRange('3M')">3M</button><button type="button" data-range="1Y" onclick="setChartRange('1Y')">1Y</button><button type="button" data-range="3Y" onclick="setChartRange('3Y')">3Y</button><button type="button" data-range="5Y" onclick="setChartRange('5Y')">5Y</button><button type="button" data-range="Max" onclick="setChartRange('Max')">Max</button></div>
+      <div class="chart-style-bar" data-chart-style="peaHist">
+        <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('peaHist')"> Discrete</label>
+        <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
+          <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
+          <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('peaHist')">
+        </label>
+      </div>
+      <div class="chart-wrap"><canvas id="trajChart"></canvas></div>
+      <p class="traj-note" id="traj-note"></p>
+      <div class="feed" id="pea-funding-list" style="margin-top:12px"></div>
     </div>
-    <div class="chart-wrap"><canvas id="trajChart"></canvas></div>
-    <p class="traj-note" id="traj-note"></p>
-    <div class="feed" id="pea-funding-list" style="margin-top:12px"></div>
-
-    <div class="section-head" style="margin-top:28px">
-      <h2 style="font-size:18px">Projection playground</h2>
-      <p>Play with monthly DCA, horizon, and growth. Comparison lines stay visible next to your selected rate.</p>
+    <div class="chart-pane" data-chart-pane="pea" data-pane="future">
+      <p class="muted" style="margin-bottom:10px">Play with monthly DCA, horizon, and growth. Comparison lines stay next to your selected rate.</p>
+      <div class="proj-controls">
+        <label class="proj-slider">
+          <span>Monthly invest <strong data-proj-monthly-val>€700</strong></span>
+          <input type="range" data-proj-monthly min="0" max="2000" step="50" value="700" oninput="onProjControlsChange()">
+        </label>
+        <label class="proj-slider">
+          <span>Horizon <strong data-proj-years-val>10y</strong></span>
+          <input type="range" data-proj-years min="1" max="30" step="1" value="10" oninput="onProjControlsChange()">
+        </label>
+        <label class="proj-slider">
+          <span>Growth (selected) <strong data-proj-rate-val>7%</strong></span>
+          <input type="range" data-proj-rate min="0" max="15" step="0.5" value="7" oninput="onProjControlsChange()">
+        </label>
+      </div>
+      <div class="traj-toggle" role="group" aria-label="Projection view">
+        <button type="button" class="on" id="tog-gross" onclick="setProjMode('gross')">Gross</button>
+        <button type="button" id="tog-net" onclick="setProjMode('net')">Net after 5y</button>
+        <button type="button" id="tog-both" onclick="setProjMode('both')">Both</button>
+      </div>
+      <div class="chart-style-bar" data-chart-style="peaProj">
+        <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('peaProj')"> Discrete</label>
+        <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
+          <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
+          <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('peaProj')">
+        </label>
+      </div>
+      <div class="chart-wrap"><canvas id="projChart"></canvas></div>
+      <p class="traj-note" id="proj-note"></p>
     </div>
-    <div class="proj-controls">
-      <label class="proj-slider">
-        <span>Monthly invest <strong id="proj-monthly-val">€700</strong></span>
-        <input type="range" id="proj-monthly" min="0" max="2000" step="50" value="700" oninput="onProjControlsChange()">
-      </label>
-      <label class="proj-slider">
-        <span>Horizon <strong id="proj-years-val">10y</strong></span>
-        <input type="range" id="proj-years" min="1" max="30" step="1" value="10" oninput="onProjControlsChange()">
-      </label>
-      <label class="proj-slider">
-        <span>Growth (selected) <strong id="proj-rate-val">7%</strong></span>
-        <input type="range" id="proj-rate" min="0" max="15" step="0.5" value="7" oninput="onProjControlsChange()">
-      </label>
-    </div>
-    <div class="traj-toggle" role="group" aria-label="Projection view">
-      <button type="button" class="on" id="tog-gross" onclick="setProjMode('gross')">Gross</button>
-      <button type="button" id="tog-net" onclick="setProjMode('net')">Net after 5y</button>
-      <button type="button" id="tog-both" onclick="setProjMode('both')">Both</button>
-    </div>
-    <div class="chart-style-bar" data-chart-style="peaProj">
-      <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('peaProj')"> Discrete</label>
-      <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
-        <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
-        <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('peaProj')">
-      </label>
-    </div>
-    <div class="chart-wrap"><canvas id="projChart"></canvas></div>
-    <p class="traj-note" id="proj-note"></p>
   </section>
 
   <section class="tab-panel" id="panel-livret">
@@ -511,17 +560,41 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
       <div class="stat-val blur-val" id="livret-bal">—</div>
     </div>
     <p class="traj-note" id="livret-note"></p>
-    <div class="range-row" role="group" aria-label="Chart range" style="margin-top:14px"><button type="button" data-range="1M" onclick="setChartRange('1M')">1M</button><button type="button" data-range="3M" onclick="setChartRange('3M')">3M</button><button type="button" data-range="1Y" onclick="setChartRange('1Y')">1Y</button><button type="button" data-range="3Y" onclick="setChartRange('3Y')">3Y</button><button type="button" data-range="5Y" onclick="setChartRange('5Y')">5Y</button><button type="button" data-range="Max" onclick="setChartRange('Max')">Max</button></div>
-    <div class="chart-style-bar" data-chart-style="livret">
-      <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('livret')"> Discrete</label>
-      <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
-        <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
-        <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('livret')">
-      </label>
+    <div class="chart-pane-tabs" role="tablist" aria-label="Livret chart view" style="margin-top:14px">
+      <button type="button" class="on" data-pane-for="livret" data-pane="existing" onclick="setChartPane('livret','existing')">Existing</button>
+      <button type="button" data-pane-for="livret" data-pane="future" onclick="setChartPane('livret','future')">Future</button>
     </div>
-    <div class="chart-wrap"><canvas id="livretChart"></canvas></div>
-    <div class="section-head" style="margin-top:22px"><h2 style="font-size:18px">Recent withdrawals</h2><p>Drops between statement balances</p></div>
-    <div class="feed" id="livret-withdrawals"></div>
+    <div class="chart-pane on" data-chart-pane="livret" data-pane="existing">
+      <div class="range-row" role="group" aria-label="Chart range"><button type="button" data-range="1M" onclick="setChartRange('1M')">1M</button><button type="button" data-range="3M" onclick="setChartRange('3M')">3M</button><button type="button" data-range="1Y" onclick="setChartRange('1Y')">1Y</button><button type="button" data-range="3Y" onclick="setChartRange('3Y')">3Y</button><button type="button" data-range="5Y" onclick="setChartRange('5Y')">5Y</button><button type="button" data-range="Max" onclick="setChartRange('Max')">Max</button></div>
+      <div class="chart-style-bar" data-chart-style="livret">
+        <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('livret')"> Discrete</label>
+        <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
+          <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
+          <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('livret')">
+        </label>
+      </div>
+      <div class="chart-wrap"><canvas id="livretChart"></canvas></div>
+      <div class="section-head" style="margin-top:22px"><h2 style="font-size:18px">Recent withdrawals</h2><p>Drops between statement balances</p></div>
+      <div class="feed" id="livret-withdrawals"></div>
+    </div>
+    <div class="chart-pane" data-chart-pane="livret" data-pane="future">
+      <p class="muted" style="margin-bottom:10px">Illustrative path at ~3% Livret A — buffer held, no DCA assumed.</p>
+      <div class="proj-controls">
+        <label class="proj-slider">
+          <span>Horizon <strong data-proj-years-val>10y</strong></span>
+          <input type="range" data-proj-years min="1" max="30" step="1" value="10" oninput="onProjControlsChange()">
+        </label>
+      </div>
+      <div class="chart-style-bar" data-chart-style="livretProj">
+        <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('livretProj')"> Discrete</label>
+        <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
+          <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
+          <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('livretProj')">
+        </label>
+      </div>
+      <div class="chart-wrap"><canvas id="livretProjChart"></canvas></div>
+      <p class="traj-note" id="livret-proj-note"></p>
+    </div>
   </section>
 
   <section class="tab-panel" id="panel-staging">
@@ -612,6 +685,14 @@ const chartStyles = {
   peaHist: loadChartStyle('peaHist'),
   peaProj: loadChartStyle('peaProj'),
   livret: loadChartStyle('livret'),
+  livretProj: loadChartStyle('livretProj'),
+  nwHist: loadChartStyle('nwHist'),
+  nwProj: loadChartStyle('nwProj'),
+};
+const chartPaneMode = {
+  wealth: localStorage.getItem('dashboard_pane_wealth') || 'existing',
+  pea: localStorage.getItem('dashboard_pane_pea') || 'existing',
+  livret: localStorage.getItem('dashboard_pane_livret') || 'existing',
 };
 let aiGenerating = false;
 const charts = {};
@@ -1426,9 +1507,41 @@ function setChartRange(id) {
   document.querySelectorAll('[data-range]').forEach(btn => {
     btn.classList.toggle('on', btn.getAttribute('data-range') === id);
   });
+  drawNwHistory();
   drawPeaHistory();
   drawLivretChart();
 }
+
+function setChartPane(group, mode, persist = true) {
+  if (!chartPaneMode[group]) return;
+  chartPaneMode[group] = mode;
+  if (persist) localStorage.setItem('dashboard_pane_' + group, mode);
+  document.querySelectorAll(`[data-pane-for="${group}"]`).forEach(btn => {
+    btn.classList.toggle('on', btn.getAttribute('data-pane') === mode);
+  });
+  document.querySelectorAll(`[data-chart-pane="${group}"]`).forEach(pane => {
+    pane.classList.toggle('on', pane.getAttribute('data-pane') === mode);
+  });
+  requestAnimationFrame(() => {
+    if (group === 'wealth') {
+      if (mode === 'existing') drawNwHistory();
+      else { syncProjControlsUI(); drawNwProjection(); }
+    }
+    if (group === 'pea') {
+      if (mode === 'existing') drawPeaHistory();
+      else { syncProjControlsUI(); drawPeaProjection(); }
+    }
+    if (group === 'livret') {
+      if (mode === 'existing') drawLivretChart();
+      else { syncProjControlsUI(); drawLivretProjection(); }
+    }
+  });
+}
+
+function syncChartPanesUI() {
+  Object.keys(chartPaneMode).forEach(group => setChartPane(group, chartPaneMode[group], false));
+}
+
 function setTab(id, persist = true) {
   activeTab = id;
   if (persist) localStorage.setItem('dashboard_tab', id);
@@ -1439,8 +1552,21 @@ function setTab(id, persist = true) {
     panel.classList.toggle('on', panel.id === 'panel-' + id);
   });
   requestAnimationFrame(() => {
-    if (id === 'pea') { drawPeaHistory(); drawPeaProjection(); syncProjControlsUI(); }
-    if (id === 'livret') drawLivretChart();
+    if (id === 'overview') {
+      syncProjControlsUI();
+      if (chartPaneMode.wealth === 'future') drawNwProjection();
+      else drawNwHistory();
+    }
+    if (id === 'pea') {
+      syncProjControlsUI();
+      if (chartPaneMode.pea === 'future') drawPeaProjection();
+      else drawPeaHistory();
+    }
+    if (id === 'livret') {
+      syncProjControlsUI();
+      if (chartPaneMode.livret === 'future') drawLivretProjection();
+      else drawLivretChart();
+    }
   });
 }
 function parseLivretDate(dmy) {
@@ -1634,6 +1760,9 @@ function onChartStyleChange(id) {
   if (id === 'peaHist') drawPeaHistory();
   else if (id === 'peaProj') drawPeaProjection();
   else if (id === 'livret') drawLivretChart();
+  else if (id === 'livretProj') drawLivretProjection();
+  else if (id === 'nwHist') drawNwHistory();
+  else if (id === 'nwProj') drawNwProjection();
 }
 
 /** Per-chart line curve: discrete or smooth 0% = sudden steps; else tension from the slider. */
@@ -1662,6 +1791,86 @@ function chartHoverOpts() {
     interaction: { mode: 'index', intersect: false, axis: 'x' },
   };
 }
+
+function fmtPostIt(v) {
+  if (anonMode) return '•••';
+  const n = Math.round(Math.abs(+v || 0));
+  if (n >= 1e6) return '€' + (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace('.', ',') + 'M';
+  if (n >= 10000) return '€' + (n / 1000).toFixed(n >= 100000 ? 0 : 1).replace('.', ',') + 'k';
+  return fmt(n);
+}
+
+/** Tiny sticky notes on projection points so amounts read without the Y-axis. */
+const projPostItPlugin = {
+  id: 'projPostIts',
+  afterDatasetsDraw(chart) {
+    const { ctx, chartArea } = chart;
+    if (!chartArea) return;
+    const labeled = [];
+    chart.data.datasets.forEach((ds, di) => {
+      if (!ds.showPostIts) return;
+      const meta = chart.getDatasetMeta(di);
+      if (!meta || meta.hidden) return;
+      const pts = meta.data || [];
+      const n = pts.length;
+      if (!n) return;
+      const step = n <= 12 ? 1 : Math.ceil(n / 12);
+      const ink = ds.postItInk || '#0b1524';
+      const paper = ds.postItPaper || 'rgba(238,243,248,0.92)';
+      const accent = ds.borderColor || '#7ea0d3';
+
+      pts.forEach((pt, i) => {
+        const raw = ds.data[i];
+        if (raw == null || !pt || pt.skip) return;
+        const isEdge = i === 0 || i === n - 1;
+        if (!isEdge && i % step !== 0) return;
+        const text = fmtPostIt(raw);
+        ctx.save();
+        ctx.font = '600 10px "IBM Plex Mono", ui-monospace, monospace';
+        const tw = ctx.measureText(text).width;
+        const padX = 6;
+        const w = tw + padX * 2;
+        const h = 16;
+        let x = pt.x - w / 2;
+        let y = pt.y - h - 10;
+        if (y < chartArea.top + 2) y = pt.y + 10;
+        x = Math.max(chartArea.left + 2, Math.min(x, chartArea.right - w - 2));
+        y = Math.max(chartArea.top + 2, Math.min(y, chartArea.bottom - h - 2));
+
+        for (let k = 0; k < 4; k++) {
+          const hit = labeled.some(b =>
+            Math.abs(b.x - x) < (b.w + w) * 0.55 && Math.abs(b.y - y) < h + 2
+          );
+          if (!hit) break;
+          y += (y >= pt.y ? 1 : -1) * (h + 3);
+          y = Math.max(chartArea.top + 2, Math.min(y, chartArea.bottom - h - 2));
+        }
+
+        ctx.fillStyle = 'rgba(7,13,22,0.28)';
+        ctx.beginPath();
+        ctx.roundRect(x + 1, y + 2, w, h, 4);
+        ctx.fill();
+
+        ctx.fillStyle = paper;
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, 4);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = accent;
+        ctx.fillRect(x, y, 3, h);
+
+        ctx.fillStyle = ink;
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, x + padX + 2, y + h / 2 + 0.5);
+        ctx.restore();
+        labeled.push({ x, y, w, h });
+      });
+    });
+  },
+};
 
 function drawLivretChart() {
   const canvas = document.getElementById('livretChart');
@@ -1737,32 +1946,314 @@ function setProjMode(mode) {
 }
 
 function syncProjControlsUI() {
-  const m = document.getElementById('proj-monthly');
-  const y = document.getElementById('proj-years');
-  const r = document.getElementById('proj-rate');
-  if (m) m.value = String(projMonthly);
-  if (y) y.value = String(projYears);
-  if (r) r.value = String(projRate);
-  const mv = document.getElementById('proj-monthly-val');
-  const yv = document.getElementById('proj-years-val');
-  const rv = document.getElementById('proj-rate-val');
-  if (mv) mv.textContent = fmt(projMonthly);
-  if (yv) yv.textContent = projYears + 'y';
-  if (rv) rv.textContent = projRate + '%';
+  document.querySelectorAll('[data-proj-monthly]').forEach(el => { el.value = String(projMonthly); });
+  document.querySelectorAll('[data-proj-years]').forEach(el => { el.value = String(projYears); });
+  document.querySelectorAll('[data-proj-rate]').forEach(el => { el.value = String(projRate); });
+  document.querySelectorAll('[data-proj-monthly-val]').forEach(el => { el.textContent = fmt(projMonthly); });
+  document.querySelectorAll('[data-proj-years-val]').forEach(el => { el.textContent = projYears + 'y'; });
+  document.querySelectorAll('[data-proj-rate-val]').forEach(el => { el.textContent = projRate + '%'; });
 }
 
-function onProjControlsChange() {
-  const m = document.getElementById('proj-monthly');
-  const y = document.getElementById('proj-years');
-  const r = document.getElementById('proj-rate');
-  if (m) projMonthly = +m.value;
-  if (y) projYears = +y.value;
-  if (r) projRate = +r.value;
+function onProjControlsChange(ev) {
+  const t = (ev && ev.target) || document.activeElement;
+  if (t && t.hasAttribute) {
+    if (t.hasAttribute('data-proj-monthly')) projMonthly = +t.value;
+    if (t.hasAttribute('data-proj-years')) projYears = +t.value;
+    if (t.hasAttribute('data-proj-rate')) projRate = +t.value;
+  }
   localStorage.setItem('dashboard_proj_monthly', String(projMonthly));
   localStorage.setItem('dashboard_proj_years', String(projYears));
   localStorage.setItem('dashboard_proj_rate', String(projRate));
   syncProjControlsUI();
   drawPeaProjection();
+  drawNwProjection();
+  drawLivretProjection();
+}
+
+/** Approx historical net worth from PEA funding × current multiple + Livret + PEE + NW log. */
+function wealthHistorySeries() {
+  const pee = STATE.pee || 0;
+  const checking = STATE.checking || 0;
+  const cost = STATE.monthlyCostBasis || 0;
+  const peaNow = STATE.pea || 0;
+  const multiple = cost > 0 ? peaNow / cost : 1;
+  const byDay = new Map();
+
+  function put(date, patch) {
+    if (!date || isNaN(+date)) return;
+    const day = new Date(date);
+    day.setHours(0, 0, 0, 0);
+    const k = day.getTime();
+    const cur = byDay.get(k) || { date: day, pea: null, livret: null, nw: null, source: 'approx' };
+    Object.assign(cur, patch);
+    byDay.set(k, cur);
+  }
+
+  let funded = 0;
+  (STATE.peaContributions || [])
+    .filter(c => c.date && c.amount != null)
+    .map(c => ({ date: new Date(c.date), amount: +c.amount }))
+    .filter(c => !isNaN(+c.date))
+    .sort((a, b) => a.date - b.date)
+    .forEach(c => {
+      funded += c.amount;
+      put(c.date, { pea: funded * multiple, source: 'approx' });
+    });
+
+  livretSeries().forEach(p => put(p.date, { livret: p.balance }));
+
+  readNwLog().forEach(e => {
+    put(new Date(e.at), { nw: e.nw, source: 'log' });
+  });
+
+  const today = new Date();
+  put(today, { pea: peaNow, livret: STATE.livretA || 0, nw: netWorth(), source: 'live' });
+
+  const rows = [...byDay.values()].sort((a, b) => a.date - b.date);
+  let lastPea = 0;
+  let lastLivret = 0;
+  return rows.map(r => {
+    if (r.pea != null) lastPea = r.pea;
+    if (r.livret != null) lastLivret = r.livret;
+    const nw = r.nw != null ? r.nw : (lastPea + lastLivret + pee + checking);
+    return {
+      date: r.date,
+      nw,
+      pea: lastPea,
+      livret: lastLivret,
+      source: r.source || 'approx',
+    };
+  }).filter(r => r.nw > 0);
+}
+
+function projectWealth(years, annualRate, monthly) {
+  const mo = monthly != null ? monthly : (STATE.peaMonthly > 0 ? STATE.peaMonthly : 700);
+  const rPea = annualRate / 12;
+  const rLiv = 0.03 / 12;
+  let pea = STATE.pea || 0;
+  let livret = STATE.livretA || 0;
+  const pee = STATE.pee || 0;
+  const checking = STATE.checking || 0;
+  const out = [{ year: 0, nw: pea + livret + pee + checking, pea, livret }];
+  for (let y = 1; y <= years; y++) {
+    for (let m = 0; m < 12; m++) {
+      pea = pea * (1 + rPea) + mo;
+      livret = livret * (1 + rLiv);
+    }
+    out.push({ year: y, nw: pea + livret + pee + checking, pea, livret });
+  }
+  return out;
+}
+
+function projectLivret(years, annualRate = 0.03) {
+  const r = annualRate / 12;
+  let value = STATE.livretA || 0;
+  const out = [{ year: 0, balance: value }];
+  for (let y = 1; y <= years; y++) {
+    for (let m = 0; m < 12; m++) value *= (1 + r);
+    out.push({ year: y, balance: value });
+  }
+  return out;
+}
+
+function drawNwHistory() {
+  const canvas = document.getElementById('nwHistChart');
+  if (!canvas) return;
+  if (charts.nwHist) { charts.nwHist.destroy(); delete charts.nwHist; }
+  let series = wealthHistorySeries();
+  const cut = rangeCutoff();
+  if (cut) {
+    const all = series;
+    series = series.filter(p => p.date >= cut);
+    if (series.length === 1) {
+      const prev = all.filter(p => p.date < cut).pop();
+      if (prev) series = [prev].concat(series);
+    }
+  }
+  const curve = chartLineStyle('nwHist', { allowStep: true });
+  const labels = series.map(p => p.date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }));
+  charts.nwHist = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Net worth',
+        data: series.map(p => Math.round(p.nw)),
+        borderColor: '#e8c46a',
+        backgroundColor: 'rgba(232,196,106,0.12)',
+        borderWidth: 2.5,
+        pointRadius: 3,
+        pointHoverRadius: 6,
+        pointHitRadius: 16,
+        fill: true,
+        tension: curve.tension,
+        stepped: curve.stepped,
+      }],
+    },
+    options: {
+      ...chartHoverOpts(),
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          enabled: true,
+          callbacks: {
+            title(items) {
+              const i = items[0]?.dataIndex;
+              if (i == null || !series[i]) return '';
+              return series[i].date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+            },
+            label(c) {
+              if (c.raw == null) return null;
+              const src = series[c.dataIndex]?.source === 'live' || series[c.dataIndex]?.source === 'log' ? '' : ' · approx';
+              return anonMode ? 'Net worth: •••' : `Net worth: ${fmt(c.raw)}${src}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { color: '#8b9aab', font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }, grid: { display: false } },
+        y: { ticks: { callback: v => fmtAxis(v), color: '#8b9aab', font: { size: 10 } }, grid: { color: 'rgba(126,160,211,0.08)' } },
+      },
+    },
+  });
+  const note = document.getElementById('nw-hist-note');
+  if (note) {
+    const last = series[series.length - 1];
+    note.textContent = series.length
+      ? `${series.length} points · now ${fmt(last?.nw || netWorth())} (PEA + Livret + PEE). Older points blend statement history with an approx PEA mark-to-market.`
+      : 'No wealth history yet — Refresh once and it will start logging.';
+  }
+}
+
+function drawNwProjection() {
+  const canvas = document.getElementById('nwProjChart');
+  if (!canvas) return;
+  if (charts.nwProj) { charts.nwProj.destroy(); delete charts.nwProj; }
+
+  const years = Math.max(1, projYears || 10);
+  const monthly = Math.max(0, projMonthly || 0);
+  const selected = Math.max(0, projRate || 0);
+  const rates = [...new Set([
+    Math.max(0, +(selected - 3).toFixed(1)),
+    +selected.toFixed(1),
+    Math.min(15, +(selected + 3).toFixed(1)),
+  ])].sort((a, b) => a - b);
+  const colors = { low: '#6b7c8f', mid: '#e8c46a', high: '#7ea0d3' };
+  const seriesByRate = rates.map(rate => ({
+    rate,
+    points: projectWealth(years, rate / 100, monthly),
+    selected: Math.abs(rate - selected) < 0.05,
+  }));
+  const baseYear = new Date().getFullYear();
+  const labels = seriesByRate[0].points.map(p =>
+    p.year === 0 ? `Now · ${baseYear}` : `${baseYear + p.year} (+${p.year}y)`
+  );
+  const curve = chartLineStyle('nwProj', { allowStep: false });
+  const datasets = seriesByRate.map((s, i) => {
+    const key = i === 0 ? 'low' : (i === seriesByRate.length - 1 ? 'high' : 'mid');
+    const col = s.selected ? colors.mid : colors[key];
+    return {
+      label: `${s.rate}%` + (s.selected ? ' ★' : ''),
+      data: s.points.map(p => Math.round(p.nw)),
+      borderColor: col,
+      borderWidth: s.selected ? 2.5 : 1.5,
+      borderDash: s.selected ? undefined : [5, 4],
+      pointRadius: s.selected ? 4 : 2.5,
+      pointHoverRadius: 6,
+      pointHitRadius: 16,
+      tension: curve.tension,
+      stepped: curve.stepped,
+      showPostIts: !!s.selected,
+      postItPaper: 'rgba(255,246,220,0.95)',
+      postItInk: '#2a2108',
+    };
+  });
+
+  charts.nwProj = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels, datasets },
+    plugins: [projPostItPlugin],
+    options: {
+      ...chartHoverOpts(),
+      layout: { padding: { top: 18, right: 8 } },
+      plugins: {
+        legend: { display: true, labels: { color: '#8b9aab', font: { size: 11, family: 'Plus Jakarta Sans' }, boxWidth: 12 } },
+        tooltip: {
+          enabled: true,
+          callbacks: { label: c => (c.raw == null ? null : fmtTip(c.dataset.label, c.raw)) },
+        },
+      },
+      scales: {
+        x: { ticks: { color: '#8b9aab', font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { display: false } },
+        y: { ticks: { callback: v => fmtAxis(v), color: '#8b9aab', font: { size: 10 } }, grid: { color: 'rgba(126,160,211,0.08)' } },
+      },
+    },
+  });
+
+  const main = seriesByRate.find(s => s.selected) || seriesByRate[Math.floor(seriesByRate.length / 2)];
+  const end = main.points[main.points.length - 1];
+  const note = document.getElementById('nw-proj-note');
+  if (note && end) {
+    note.textContent =
+      `From ${fmt(netWorth())} now · PEA DCA ${fmt(monthly)}/mo at ${selected}% · Livret ~3% · PEE flat` +
+      ` · at +${years}y ≈ ${fmt(end.nw)} — illustrative, not advice.`;
+  }
+}
+
+function drawLivretProjection() {
+  const canvas = document.getElementById('livretProjChart');
+  if (!canvas) return;
+  if (charts.livretProj) { charts.livretProj.destroy(); delete charts.livretProj; }
+  const years = Math.max(1, projYears || 10);
+  const points = projectLivret(years, 0.03);
+  const baseYear = new Date().getFullYear();
+  const labels = points.map(p =>
+    p.year === 0 ? `Now · ${baseYear}` : `${baseYear + p.year} (+${p.year}y)`
+  );
+  const curve = chartLineStyle('livretProj', { allowStep: false });
+  charts.livretProj = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Livret A ~3%',
+        data: points.map(p => Math.round(p.balance)),
+        borderColor: '#7ea0d3',
+        backgroundColor: 'rgba(126,160,211,0.12)',
+        borderWidth: 2,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        pointHitRadius: 16,
+        fill: true,
+        tension: curve.tension,
+        stepped: curve.stepped,
+        showPostIts: true,
+        postItPaper: 'rgba(232,240,250,0.95)',
+        postItInk: '#0b1524',
+      }],
+    },
+    plugins: [projPostItPlugin],
+    options: {
+      ...chartHoverOpts(),
+      layout: { padding: { top: 18, right: 8 } },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          enabled: true,
+          callbacks: { label: c => (c.raw == null ? null : fmtTip('Livret A', c.raw)) },
+        },
+      },
+      scales: {
+        x: { ticks: { color: '#8b9aab', font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { display: false } },
+        y: { ticks: { callback: v => fmtAxis(v), color: '#8b9aab', font: { size: 10 } }, grid: { color: 'rgba(126,160,211,0.08)' } },
+      },
+    },
+  });
+  const note = document.getElementById('livret-proj-note');
+  const end = points[points.length - 1];
+  if (note && end) {
+    note.textContent = `From ${fmt(STATE.livretA || 0)} · ~3%/y · at +${years}y ≈ ${fmt(end.balance)} if left untouched.`;
+  }
 }
 
 function buildContributionSeries() {
@@ -1918,93 +2409,6 @@ function drawPeaHistory() {
   }
 }
 
-function fmtPostIt(v) {
-  if (anonMode) return '•••';
-  const n = Math.round(Math.abs(+v || 0));
-  if (n >= 1e6) return '€' + (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace('.', ',') + 'M';
-  if (n >= 10000) return '€' + (n / 1000).toFixed(n >= 100000 ? 0 : 1).replace('.', ',') + 'k';
-  return fmt(n);
-}
-
-/** Tiny sticky notes on projection points so amounts read without the Y-axis. */
-const projPostItPlugin = {
-  id: 'projPostIts',
-  afterDatasetsDraw(chart) {
-    const { ctx, chartArea } = chart;
-    if (!chartArea) return;
-    const labeled = [];
-    chart.data.datasets.forEach((ds, di) => {
-      if (!ds.showPostIts) return;
-      const meta = chart.getDatasetMeta(di);
-      if (!meta || meta.hidden) return;
-      const pts = meta.data || [];
-      const n = pts.length;
-      if (!n) return;
-      // Keep every point up to ~12; beyond that keep first/last + evenly spaced.
-      const step = n <= 12 ? 1 : Math.ceil(n / 12);
-      const ink = ds.postItInk || '#0b1524';
-      const paper = ds.postItPaper || 'rgba(238,243,248,0.92)';
-      const accent = ds.borderColor || '#7ea0d3';
-
-      pts.forEach((pt, i) => {
-        const raw = ds.data[i];
-        if (raw == null || !pt || pt.skip) return;
-        const isEdge = i === 0 || i === n - 1;
-        if (!isEdge && i % step !== 0) return;
-        const text = fmtPostIt(raw);
-        ctx.save();
-        ctx.font = '600 10px "IBM Plex Mono", ui-monospace, monospace';
-        const tw = ctx.measureText(text).width;
-        const padX = 6;
-        const padY = 4;
-        const w = tw + padX * 2;
-        const h = 16;
-        let x = pt.x - w / 2;
-        let y = pt.y - h - 10;
-        // Flip below the point near the top edge
-        if (y < chartArea.top + 2) y = pt.y + 10;
-        x = Math.max(chartArea.left + 2, Math.min(x, chartArea.right - w - 2));
-        y = Math.max(chartArea.top + 2, Math.min(y, chartArea.bottom - h - 2));
-
-        // Nudge away from an earlier note on the same x-ish band
-        for (let k = 0; k < 4; k++) {
-          const hit = labeled.some(b =>
-            Math.abs(b.x - x) < (b.w + w) * 0.55 && Math.abs(b.y - y) < h + 2
-          );
-          if (!hit) break;
-          y += (y >= pt.y ? 1 : -1) * (h + 3);
-          y = Math.max(chartArea.top + 2, Math.min(y, chartArea.bottom - h - 2));
-        }
-
-        // Soft shadow
-        ctx.fillStyle = 'rgba(7,13,22,0.28)';
-        ctx.beginPath();
-        ctx.roundRect(x + 1, y + 2, w, h, 4);
-        ctx.fill();
-
-        // Paper
-        ctx.fillStyle = paper;
-        ctx.strokeStyle = accent;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.roundRect(x, y, w, h, 4);
-        ctx.fill();
-        ctx.stroke();
-
-        // Accent strip (post-it tape)
-        ctx.fillStyle = accent;
-        ctx.fillRect(x, y, 3, h);
-
-        ctx.fillStyle = ink;
-        ctx.textBaseline = 'middle';
-        ctx.fillText(text, x + padX + 2, y + h / 2 + 0.5);
-        ctx.restore();
-        labeled.push({ x, y, w, h });
-      });
-    });
-  },
-};
-
 function drawPeaProjection() {
   const canvas = document.getElementById('projChart');
   if (!canvas) return;
@@ -2110,7 +2514,14 @@ function drawPeaProjection() {
 }
 
 /** @deprecated name kept for any leftover callers */
-function drawTrajectory() { drawPeaHistory(); drawPeaProjection(); }
+function drawTrajectory() {
+  drawNwHistory();
+  drawNwProjection();
+  drawPeaHistory();
+  drawPeaProjection();
+  drawLivretChart();
+  drawLivretProjection();
+}
 
 function updateStatus() {
   const now = new Date();
@@ -2152,14 +2563,12 @@ function renderAll(txs) {
   }
   syncProjControlsUI();
   syncChartStyleUI();
-  drawPeaHistory();
-  drawPeaProjection();
-  drawLivretChart();
   updateStatus();
-  setTab(activeTab, false);
   document.querySelectorAll('[data-range]').forEach(btn => {
     btn.classList.toggle('on', btn.getAttribute('data-range') === chartRange);
   });
+  syncChartPanesUI();
+  setTab(activeTab, false);
 }
 
 function getExportWebAppUrl() {
