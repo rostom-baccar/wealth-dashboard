@@ -180,6 +180,16 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .cat-track{height:4px;background:rgba(255,255,255,.06);border-radius:99px;overflow:hidden}
 .cat-fill{height:100%;background:linear-gradient(90deg,var(--aegean-deep),var(--aegean));border-radius:99px}
 .cat-amt{text-align:right;font-family:var(--mono);font-size:12px}
+.inc-breakdown{display:flex;flex-wrap:wrap;gap:8px}
+.inc-chip{
+  padding:7px 11px;border-radius:10px;border:1px solid var(--line);
+  background:rgba(16,28,44,0.72);font-size:12px;color:var(--muted);
+}
+.inc-chip strong{display:block;margin-top:2px;font-family:var(--mono);font-size:14px;font-weight:600;color:var(--ok)}
+.inc-section-lbl{
+  width:100%;font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;margin:2px 0 0;
+}
 .feed{border-top:1px solid var(--line)}
 .feed-item{display:grid;grid-template-columns:1fr auto;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);font-size:13px}
 .feed-cat{font-weight:600}
@@ -280,6 +290,7 @@ body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
           <div class="stat"><div class="stat-lbl">Spent</div><div class="stat-val blur-val" id="stat-exp">—</div></div>
         </div>
         <div class="stat"><div class="stat-lbl">Net</div><div class="stat-val blur-val" id="stat-net">—</div></div>
+        <div id="inc-breakdown" class="inc-breakdown" style="margin-top:14px"></div>
         <div id="cat-bars" style="margin-top:18px"></div>
       </div>
       <div>
@@ -772,7 +783,8 @@ function monthBucket(txs) {
 
 function renderCashflow(txs) {
   const month = monthBucket(txs);
-  const inc = month.filter(isIncomeTx).reduce((s, t) => s + Math.abs(+t.amount || 0), 0);
+  const incomeTxs = month.filter(isIncomeTx);
+  const inc = incomeTxs.reduce((s, t) => s + Math.abs(+t.amount || 0), 0);
   const exp = month.filter(isExpenseTx).reduce((s, t) => s + Math.abs(t.amount), 0);
   const net = inc - exp;
   const elInc = document.getElementById('stat-inc');
@@ -783,7 +795,23 @@ function renderCashflow(txs) {
   elNet.textContent = (net >= 0 ? '+' : '−') + fmt(net);
   elNet.className = 'stat-val blur-val ' + (net >= 0 ? 'pos' : 'neg');
   document.getElementById('cashflow-sub').textContent =
-    `${month.length} movements · wallet income may be incomplete until salary is logged`;
+    `${month.length} movements · income broken down by category below`;
+
+  const incByCat = {};
+  incomeTxs.forEach(t => {
+    const name = (t.category || 'Income').trim() || 'Income';
+    incByCat[name] = (incByCat[name] || 0) + Math.abs(+t.amount || 0);
+  });
+  const incSorted = Object.entries(incByCat).sort((a, b) => b[1] - a[1]);
+  const incEl = document.getElementById('inc-breakdown');
+  if (incEl) {
+    incEl.innerHTML = incSorted.length
+      ? `<div class="inc-section-lbl">Income detail</div>` +
+        incSorted.map(([name, amt]) =>
+          `<div class="inc-chip"><span>${name}</span><strong class="blur-val">+${fmt(amt)}</strong></div>`
+        ).join('')
+      : '<p style="color:var(--muted);font-size:13px">No income logged this month.</p>';
+  }
 
   const cats = {};
   month.filter(isExpenseTx).forEach(t => {
@@ -792,7 +820,8 @@ function renderCashflow(txs) {
   const sorted = Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 6);
   const max = sorted[0]?.[1] || 1;
   document.getElementById('cat-bars').innerHTML = sorted.length
-    ? sorted.map(([name, amt]) => `
+    ? `<div class="inc-section-lbl" style="margin-bottom:4px">Spend by category</div>` +
+      sorted.map(([name, amt]) => `
       <div class="cat-row">
         <span class="cat-name" title="${name}">${name}</span>
         <div class="cat-track"><div class="cat-fill" style="width:${Math.round(amt / max * 100)}%"></div></div>
