@@ -795,9 +795,6 @@ function localDayStr(d) {
   if (!x || isNaN(+x)) return '';
   return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
 }
-function clearAiCache() {
-  try { localStorage.removeItem(aiCacheKey()); } catch (_) {}
-}
 
 function onAnonToggle() {
   anonMode = document.getElementById('tog-anon').checked;
@@ -1000,8 +997,28 @@ function loadBalancesFromStorage() {
   } catch (e) { console.warn('localStorage:', e); }
 }
 
+let lastLedgerFingerprint = null;
+function ledgerFingerprint(data) {
+  const txs = data?.transactions || [];
+  let sum = 0;
+  for (let i = 0; i < Math.min(txs.length, 40); i++) sum += Math.abs(+txs[i].amount || 0);
+  return [
+    data.lastSync || data.servedAt || '',
+    txs.length,
+    Math.round(sum),
+    (data.budgets || []).length,
+  ].join(':');
+}
+
 function applySnapshotData(data) {
   if (!data || !Array.isArray(data.transactions)) throw new Error('Invalid snapshot JSON');
+  const fp = ledgerFingerprint(data);
+  let ledgerChanged = false;
+  if (lastLedgerFingerprint && lastLedgerFingerprint !== fp) {
+    clearAiCache();
+    ledgerChanged = true;
+  }
+  lastLedgerFingerprint = fp;
   STATE.transactions = data.transactions.map(t => ({
       date: parseWalletDate(t.date), type: t.type, category: t.category,
       amount: parseFloat(t.amount), memo: t.memo || '',
@@ -1014,6 +1031,7 @@ function applySnapshotData(data) {
     STATE.budgets = data.budgets;
     try { persistBalancesState(); } catch (_) {}
   }
+  return ledgerChanged;
 }
 
 async function unlockWithPassphrase(passphrase, remember) {
@@ -1164,6 +1182,8 @@ function saveBalancesFromModal() {
   const ldds = lddsEl ? lddsEl.value : '';
   const gemini = (document.getElementById('modal-gemini')?.value || '').trim();
   const exportUrl = (document.getElementById('modal-export-url')?.value || '').trim();
+  const prevGemini = (localStorage.getItem(LS_GEMINI) || '').trim();
+  if (gemini !== prevGemini) clearAiCache();
   if (gemini) localStorage.setItem(LS_GEMINI, gemini);
   else localStorage.removeItem(LS_GEMINI);
   if (exportUrl) localStorage.setItem(LS_EXPORT_URL, exportUrl);
@@ -2757,15 +2777,18 @@ async function refreshAll() {
   if (status) status.innerHTML = `<span class="pill pill-load">Refreshing wallet + budgets + Drive balances…</span>`;
   try {
     const data = await fetchLiveSnapshotFromAppsScript();
-    applySnapshotData(data);
+    const ledgerChanged = applySnapshotData(data);
     STATE.snapshotSource = 'apps-script-live';
     STATE.driveOk = true;
-  await fetchSavings();
-  // Wallet data changed — don't keep a check-in written against the old ledger.
-  clearAiCache();
-  renderAll(STATE.transactions);
-    // Snapshot NW after a successful Refresh so the next visit can show “up by X% vs last check”
+    await fetchSavings();
+    renderAll(STATE.transactions);
+    // Snapshot NW after a successful Refresh so the next visit can show “vs last check”
     commitNwCheckpoint(netWorth(), true);
+    // Fingerprint clear drops localStorage cache, but the AI panel still shows old HTML —
+    // regenerate whenever the ledger actually moved (or always after live refresh).
+    if (ledgerChanged) {
+      generateAiSummary(STATE.transactions, true).catch(() => {});
+    }
     const nBud = (STATE.budgets || []).length;
     if (status) status.innerHTML = [
       `<span class="pill pill-ok">Refresh ✓</span>`,
@@ -2794,7 +2817,7 @@ function renderAiHtml(text) {
   return parts.map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
 }
 
-function aiCacheKey() { return 'dashboard_ai_checkin_v8'; }
+function aiCacheKey() { return 'dashboard_ai_checkin_v10'; }
 function getAiCache() {
   try { return JSON.parse(localStorage.getItem(aiCacheKey()) || 'null'); } catch { return null; }
 }
@@ -2809,6 +2832,9 @@ function setAiCache(text, meta = {}) {
     }));
   } catch {}
 }
+function clearAiCache() {
+  try { localStorage.removeItem(aiCacheKey()); } catch (_) {}
+}
 function setCheckinStatus(msg, tone = '') {
   const el = document.getElementById('ai-status');
   if (!el) return;
@@ -2817,6 +2843,15 @@ function setCheckinStatus(msg, tone = '') {
 }
 
 let aiRequestSerial = 0;
+
+function isGeminiFatalError(err) {
+  const status = err && err.status;
+  const msg = String((err && err.message) || '');
+  if (status === 401 || status === 403 || status === 429) return true;
+  if (/RESOURCE_EXHAUSTED|quota exceeded|rate.?limit/i.test(msg)) return true;
+  if (status === 400 && /api[_ ]?key|API_KEY|invalid|permission|CONSUMER|expired/i.test(msg)) return true;
+  return false;
+}
 
 function categoryTotals(txs) {
   const map = {};
@@ -3161,6 +3196,23 @@ function buildCheckinPrompt(ctx) {
     moneySystem: 'EOM Bourso LDDS staging → PEA; Livret A buffer floor €8000; LCL LDDS off-dashboard.',
   };
 
+  // Keep the prompt under ~28k chars so Flash doesn't burn the output budget on a giant JSON dump.
+  let dossierJson = JSON.stringify(dossier);
+  if (dossierJson.length > 28000) {
+    const slim = {
+      ...dossier,
+      allExpensesThisMonth: (dossier.allExpensesThisMonth || []).slice(0, 25),
+      expensesWithMemos: (dossier.expensesWithMemos || []).slice(0, 20),
+      expensesInOverBudgetCategories: (dossier.expensesInOverBudgetCategories || []).slice(0, 15),
+      largestExpenses: (dossier.largestExpenses || []).slice(0, 12),
+      budgets: (dossier.budgets || []).map(b => ({
+        ...b,
+        sampleTx: (b.sampleTx || []).slice(0, 6),
+      })),
+    };
+    dossierJson = JSON.stringify(slim);
+  }
+
   return [
     'You are Rostom’s personal wealth check-in writer — a thoughtful friend who inspected his dossier and, when useful, recent public market/news context. Warm, specific, adult. Not a coach bot.',
     '',
@@ -3177,7 +3229,7 @@ function buildCheckinPrompt(ctx) {
     wealthLine,
     '',
     'PRIVATE DOSSIER JSON:',
-    JSON.stringify(dossier),
+    dossierJson,
   ].join('\n');
 }
 
@@ -3190,7 +3242,12 @@ const GEMINI_CHECKIN_MODELS = [
 function extractGeminiText(data) {
   const parts = data?.candidates?.[0]?.content?.parts;
   if (!Array.isArray(parts)) return '';
-  return parts.map(p => (typeof p?.text === 'string' ? p.text : '')).filter(Boolean).join('').trim();
+  // Gemini 2.5+ may return thought summaries alongside the answer — never show those.
+  return parts
+    .filter(p => p && p.thought !== true && typeof p.text === 'string' && p.text.trim())
+    .map(p => p.text)
+    .join('')
+    .trim();
 }
 
 async function callGeminiCheckin(apiKey, prompt, { withSearch = true, model } = {}) {
@@ -3198,8 +3255,16 @@ async function callGeminiCheckin(apiKey, prompt, { withSearch = true, model } = 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`;
   const body = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.65, maxOutputTokens: 800 },
+    generationConfig: {
+      temperature: 0.65,
+      maxOutputTokens: 1024,
+    },
   };
+  // 2.5 Flash thinking can eat the output budget; zero it so we only get the final prose.
+  // Older Flash models reject thinkingConfig — omit for them.
+  if (/2\.5/.test(modelId)) {
+    body.generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  }
   // REST JSON uses camelCase googleSearch (snake_case is ignored / rejected).
   if (withSearch) body.tools = [{ googleSearch: {} }];
 
@@ -3226,6 +3291,7 @@ async function callGeminiCheckin(apiKey, prompt, { withSearch = true, model } = 
   if (!text) {
     const block = data?.candidates?.[0]?.finishReason || data?.promptFeedback?.blockReason || 'empty';
     const err = new Error('empty response (' + block + ')');
+    err.status = res.status;
     err.model = modelId;
     throw err;
   }
@@ -3262,21 +3328,18 @@ async function generateAiSummary(txs, force = false) {
     setCheckinStatus(why || 'Offline template — add a Gemini API key in Settings for the real check-in', 'bad');
   };
 
-  if (!apiKey) {
-    finishLocal('No Gemini API key in Settings — showing offline template only');
-    if (stillCurrent()) {
-      aiGenerating = false;
-      if (btn) { btn.textContent = 'Refresh check-in'; btn.disabled = false; }
-    }
-    return;
-  }
-
-  const prompt = buildCheckinPrompt(ctx);
-  const errors = [];
   const digest = `dossier ${ctx.unbudgetedCats?.length || 0} unbudgeted cat · ${ctx.labeledAnchors?.length || 0} labels · ${ctx.unbudgetedExpenses?.length || 0} out-of-band txs`;
-  setCheckinStatus('Calling Gemini… · ' + digest, 'warn');
+  const errors = [];
 
   try {
+    if (!apiKey) {
+      finishLocal('No Gemini API key in Settings — showing offline template only');
+      return;
+    }
+
+    const prompt = buildCheckinPrompt(ctx);
+    setCheckinStatus('Calling Gemini… · ' + digest, 'warn');
+
     let result = null;
     // Prefer grounded search; fall back across models, then plain generation.
     outer: for (const withSearch of [true, false]) {
@@ -3288,6 +3351,8 @@ async function generateAiSummary(txs, force = false) {
         } catch (e) {
           errors.push(`${model}${withSearch ? '+search' : ''}: ${e.message}`);
           console.warn('Gemini attempt failed:', model, withSearch, e.message);
+          // Bad key / quota — don't hammer 5 more model variants.
+          if (isGeminiFatalError(e)) throw e;
         }
       }
     }
