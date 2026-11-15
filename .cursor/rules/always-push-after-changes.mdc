@@ -1,0 +1,14 @@
+---
+description: After every requested change, commit and push to git
+alwaysApply: true
+---
+
+# Always commit + push after requested changes
+
+Whenever the user asks for a change to this project:
+
+1. Implement it.
+2. Commit with a concise message.
+3. Push to `origin` in the same turn — do not wait to be asked again.
+
+Skip only if they explicitly say not to commit/push, or if there is nothing to commit.
