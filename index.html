@@ -1170,12 +1170,47 @@ function seedNwLogFromCheckpoint() {
   recordNwSnapshot(cp.nw, cp.at);
 }
 
+/** Seed log from reconstructed PEA/Livret history so period compares work on day one. */
+function seedNwLogFromWealthHistory() {
+  if (typeof wealthHistorySeries !== 'function') return;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayMs = today.getTime();
+  const existing = new Set(readNwLog().map(e => e.at));
+  wealthHistorySeries().forEach(p => {
+    if (!p || !(p.nw > 0) || !p.date) return;
+    const day = new Date(p.date);
+    day.setHours(0, 0, 0, 0);
+    const at = day.getTime();
+    if (at >= todayMs || existing.has(at)) return;
+    recordNwSnapshot(p.nw, at);
+    existing.add(at);
+  });
+}
+
+function nwCandidates() {
+  const byDay = new Map();
+  readNwLog().forEach(e => {
+    if (e && e.nw > 0 && e.at) byDay.set(e.at, { nw: e.nw, at: e.at, source: 'log' });
+  });
+  if (typeof wealthHistorySeries === 'function') {
+    wealthHistorySeries().forEach(p => {
+      if (!p || !(p.nw > 0) || !p.date) return;
+      const day = new Date(p.date);
+      day.setHours(0, 0, 0, 0);
+      const at = day.getTime();
+      if (byDay.has(at) && byDay.get(at).source === 'log') return;
+      byDay.set(at, { nw: p.nw, at, source: p.source || 'approx' });
+    });
+  }
+  return [...byDay.values()].sort((a, b) => a.at - b.at);
+}
+
 function nwSnapshotNear(targetMs, { minAgeMs = 0, maxSlackMs = 20 * 86400000 } = {}) {
-  const log = readNwLog();
   const now = Date.now();
   let best = null;
   let bestDist = Infinity;
-  for (const e of log) {
+  for (const e of nwCandidates()) {
     const age = now - e.at;
     if (age < minAgeMs) continue;
     const dist = Math.abs(e.at - targetMs);
@@ -1193,17 +1228,40 @@ function heroCompareBaseline(mode) {
   if (mode === 'check') {
     const prev = readNwCheckpoint();
     if (!prev || !(prev.nw > 0)) return null;
+    // If checkpoint is today's same NW, try previous log day instead.
+    if (Math.abs((prev.nw || 0) - netWorth()) < 0.5) {
+      const older = nwCandidates().filter(e => now - e.at >= 12 * 3600000);
+      const last = older[older.length - 1];
+      if (last) {
+        const when = new Date(last.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+        return { nw: last.nw, at: last.at, label: 'last check', when };
+      }
+    }
     return { nw: prev.nw, at: prev.at || now, label: 'last check' };
   }
   const days = mode === '3m' ? 90 : (mode === '1y' ? 365 : 30);
   const target = now - days * 86400000;
-  const hit = nwSnapshotNear(target, {
-    minAgeMs: Math.max(14, Math.floor(days * 0.45)) * 86400000,
-    maxSlackMs: Math.max(21, Math.floor(days * 0.55)) * 86400000,
+  const label = mode === '3m' ? '3 months' : (mode === '1y' ? '1 year' : 'previous month');
+
+  // Tight window around the requested period
+  let hit = nwSnapshotNear(target, {
+    minAgeMs: Math.max(7, Math.floor(days * 0.35)) * 86400000,
+    maxSlackMs: Math.max(40, Math.floor(days * 0.75)) * 86400000,
   });
+  // Wider fallback so we still show a delta when history is sparse
+  if (!hit) {
+    hit = nwSnapshotNear(target, {
+      minAgeMs: Math.max(2, Math.floor(days * 0.15)) * 86400000,
+      maxSlackMs: Math.max(days, 120) * 86400000,
+    });
+  }
+  // Last resort: oldest point we have that isn’t from the last day
+  if (!hit) {
+    const older = nwCandidates().filter(e => now - e.at >= 2 * 86400000);
+    if (older.length) hit = older[0];
+  }
   if (!hit) return null;
   const when = new Date(hit.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-  const label = mode === '3m' ? '3 months' : (mode === '1y' ? '1 year' : 'previous month');
   return { nw: hit.nw, at: hit.at, label, when };
 }
 
@@ -1375,6 +1433,7 @@ function setTabBoost(id, boost) {
 function renderHero() {
   const nw = netWorth();
   seedNwLogFromCheckpoint();
+  seedNwLogFromWealthHistory();
   if (nw > 0) recordNwSnapshot(nw);
   const boosts = computeBoosts(STATE.transactions);
 
