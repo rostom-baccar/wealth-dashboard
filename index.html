@@ -149,9 +149,33 @@ body:not(.locked) #unlock-overlay{display:none!important}
 }
 .hero-amount{
   position:relative;z-index:1;font-family:var(--mono);font-weight:600;
-  font-size:clamp(36px,7vw,52px);letter-spacing:-0.03em;color:var(--gold);margin-bottom:12px;
+  font-size:clamp(36px,7vw,52px);letter-spacing:-0.03em;color:var(--gold);margin-bottom:8px;
 }
+.hero-delta{
+  position:relative;z-index:1;font-family:var(--mono);font-weight:600;
+  font-size:clamp(15px,2.8vw,20px);margin-bottom:12px;letter-spacing:-0.02em;
+}
+.hero-delta.up{color:var(--ok)}
+.hero-delta.down{color:var(--bad)}
+.hero-delta.flat{color:var(--muted)}
+.hero-boosts{
+  position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;
+}
+.hero-boost-chip{
+  padding:8px 12px;border-radius:10px;border:1px solid var(--line);
+  background:rgba(7,13,22,0.4);font-size:12px;color:var(--muted);max-width:100%;
+}
+.hero-boost-chip b{color:var(--text);font-family:var(--mono);font-weight:600}
+.hero-boost-chip.up b{color:var(--ok)}
+.hero-boost-chip.down b{color:var(--bad)}
 .hero-support{position:relative;z-index:1;max-width:40em;color:rgba(238,243,248,.78);font-size:14px;margin-bottom:18px}
+.tab-boost{
+  margin:0 0 16px;padding:12px 14px;border-radius:var(--radius);border:1px solid var(--line);
+  background:rgba(16,28,44,.72);font-size:13px;color:var(--muted);line-height:1.45;
+}
+.tab-boost b{font-family:var(--mono);color:var(--text)}
+.tab-boost.up b{color:var(--ok)}
+.tab-boost.down b{color:var(--bad)}
 .hero-split{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:12px 20px;margin-bottom:20px}
 .hero-split > div{
   min-width:108px;padding:10px 14px;border-radius:12px;
@@ -240,7 +264,7 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .modal-actions .btn{flex:1;text-align:center;padding:12px}
 .finary-box{margin-bottom:14px;padding:10px 12px;border-radius:10px;border:1px solid rgba(126,160,211,.3);background:rgba(61,96,143,.2);font-size:12px}
 .finary-wait{margin-bottom:14px;padding:10px 12px;border-radius:10px;border:1px solid rgba(232,196,106,.3);background:var(--gold-dim);font-size:12px;color:var(--gold)}
-body.anon .blur-val,body.anon .hero-amount,body.anon .hero-split strong,body.anon .stat-val,body.anon .cat-amt,body.anon .feed-amt,body.anon .cat-track,body.anon #ai-body,body.anon .chart-wrap{filter:blur(12px)!important;opacity:.15!important;user-select:none!important;pointer-events:none!important}
+body.anon .blur-val,body.anon .hero-amount,body.anon .hero-delta,body.anon .hero-boosts,body.anon .hero-split strong,body.anon .stat-val,body.anon .cat-amt,body.anon .feed-amt,body.anon .cat-track,body.anon #ai-body,body.anon .chart-wrap,body.anon .tab-boost{filter:blur(12px)!important;opacity:.15!important;user-select:none!important;pointer-events:none!important}
 body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
 .spin{display:inline-block;animation:spin .9s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -332,6 +356,8 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
     <div class="hero-brand">Rostom</div>
     <div class="hero-kicker">Net worth</div>
     <div class="hero-amount blur-val" id="nw-hero-val">—</div>
+    <div class="hero-delta blur-val" id="hero-delta"></div>
+    <div class="hero-boosts" id="hero-boosts"></div>
     <p class="hero-support" id="hero-support">Unlock to load balances.</p>
     <div class="hero-split" id="hero-split"></div>
     <div class="hero-cta">
@@ -369,6 +395,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
       <h2>This month</h2>
       <p id="cashflow-sub">Income, budgets, spend, and latest movements.</p>
     </div>
+    <div id="spend-tab-boost" class="tab-boost" style="display:none"></div>
     <div class="month-grid">
       <div>
         <div class="stat-pair">
@@ -393,6 +420,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
       <h2>PEA</h2>
       <p>Per-fund performance, real funding history, then a separate playground for projections.</p>
     </div>
+    <div id="pea-tab-boost" class="tab-boost" style="display:none"></div>
     <div id="pea-holdings" style="margin-bottom:18px"></div>
 
     <div class="section-head" style="margin-top:8px">
@@ -436,6 +464,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
       <h2>Livret A</h2>
       <p>Buffer money you are not planning to spend — separate from LCL LDDS sinking funds.</p>
     </div>
+    <div id="livret-tab-boost" class="tab-boost" style="display:none"></div>
     <div class="stat" style="max-width:280px;margin-bottom:12px">
       <div class="stat-lbl">Balance</div>
       <div class="stat-val blur-val" id="livret-bal">—</div>
@@ -452,6 +481,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
       <h2>Bourso LDDS staging</h2>
       <p>The live pot for month-end PEA funding — watch it shrink when you top up allowance.</p>
     </div>
+    <div id="staging-tab-boost" class="tab-boost" style="display:none"></div>
     <div id="staging-body"></div>
   </section>
 </div>
@@ -780,6 +810,8 @@ async function unlockWithPassphrase(passphrase, remember) {
   hideUnlockModal();
   await fetchSavings();
   renderAll(STATE.transactions);
+  // First-ever baseline so the next visit can show “vs last check”
+  if (!readNwCheckpoint()) commitNwCheckpoint(netWorth(), true);
   generateAiSummary(STATE.transactions, false).catch(() => {});
   return true;
 }
@@ -927,19 +959,211 @@ function netWorth() {
   return (STATE.pea || 0) + (STATE.livretA || 0) + (STATE.pee || 0) + (STATE.checking || 0);
 }
 
+function fmtDelta(amount, pct) {
+  const sign = amount >= 0 ? '+' : '−';
+  const pctTxt = pct != null && isFinite(pct) ? ` (${sign}${Math.abs(pct).toFixed(1)}%)` : '';
+  return `${sign}${fmt(amount)}${pctTxt}`;
+}
+
+function deltaDir(amount) {
+  if (amount > 0.5) return 'up';
+  if (amount < -0.5) return 'down';
+  return 'flat';
+}
+
+function readNwCheckpoint() {
+  try { return JSON.parse(localStorage.getItem('dashboard_nw_checkpoint') || 'null'); }
+  catch { return null; }
+}
+
+function commitNwCheckpoint(nw, force = false) {
+  if (!(nw > 0)) return;
+  const prev = readNwCheckpoint();
+  const ageMs = prev && prev.at ? (Date.now() - prev.at) : Infinity;
+  // New baseline after Refresh, or if last check is older than 12h, or first time
+  if (force || !prev || ageMs > 12 * 3600 * 1000) {
+    localStorage.setItem('dashboard_nw_checkpoint', JSON.stringify({ nw, at: Date.now() }));
+  }
+}
+
+/** Shared “up by X / vs Y” facts for hero + tabs. */
+function computeBoosts(txs) {
+  const out = { hero: null, chips: [], pea: null, livret: null, spend: null, staging: null, overview: [] };
+  const nw = netWorth();
+  const cost = STATE.monthlyCostBasis || 0;
+  const pea = STATE.pea || 0;
+  const livret = STATE.livretA || 0;
+
+  // PEA vs capital invested
+  if (pea && cost) {
+    const amt = pea - cost;
+    const pct = cost ? (amt / cost) * 100 : null;
+    const b = {
+      dir: deltaDir(amt),
+      text: `PEA ${fmtDelta(amt, pct)} vs capital invested (${fmt(cost)})`,
+      short: `PEA ${fmtDelta(amt, pct)} vs invested`,
+      amount: amt, pct, vs: 'capital invested',
+    };
+    out.pea = b;
+    out.chips.push(b);
+    out.overview.push({ lbl: 'PEA vs invested', val: fmtDelta(amt, pct), sub: `now ${fmt(pea)} · capital ${fmt(cost)}`, dir: b.dir });
+  }
+
+  // Livret vs previous statement
+  const series = livretSeries();
+  if (series.length >= 2 && livret) {
+    const prev = series[series.length - 2];
+    const amt = livret - prev.balance;
+    const pct = prev.balance ? (amt / prev.balance) * 100 : null;
+    const when = prev.date.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+    const b = {
+      dir: deltaDir(amt),
+      text: `Livret ${fmtDelta(amt, pct)} vs last statement (${fmt(prev.balance)} · ${when})`,
+      short: `Livret ${fmtDelta(amt, pct)} vs ${when}`,
+      amount: amt, pct, vs: `last statement (${when})`,
+    };
+    out.livret = b;
+    out.chips.push(b);
+    out.overview.push({ lbl: 'Livret vs last statement', val: fmtDelta(amt, pct), sub: `${fmt(livret)} now · was ${fmt(prev.balance)}`, dir: b.dir });
+  }
+
+  // Wallet: this month net vs last month
+  const byM = savingsByMonth(txs || []);
+  if (byM.length) {
+    const cur = byM[byM.length - 1];
+    const prev = byM.length >= 2 ? byM[byM.length - 2] : null;
+    if (prev) {
+      const amt = cur.saved - prev.saved;
+      const pct = prev.saved !== 0 ? (amt / Math.abs(prev.saved)) * 100 : null;
+      const b = {
+        dir: deltaDir(amt),
+        text: `Saved ${fmtDelta(amt, pct)} vs last month (this ${fmt(cur.saved)} · last ${fmt(prev.saved)})`,
+        short: `Saved ${fmtDelta(amt, pct)} vs last month`,
+        amount: amt, pct, vs: 'last month',
+      };
+      out.spend = b;
+      out.chips.push(b);
+      out.overview.push({ lbl: 'Saved vs last month', val: fmtDelta(amt, pct), sub: `this month ${fmt(cur.saved)} · last ${fmt(prev.saved)}`, dir: b.dir });
+    } else {
+      out.spend = {
+        dir: deltaDir(cur.saved),
+        text: `This month net ${cur.saved >= 0 ? '+' : '−'}${fmt(cur.saved)} so far`,
+        short: `This month ${cur.saved >= 0 ? '+' : '−'}${fmt(cur.saved)}`,
+        amount: cur.saved, pct: null, vs: 'so far',
+      };
+    }
+    out.overview.push({
+      lbl: 'Saved this month',
+      val: (cur.saved >= 0 ? '+' : '−') + fmt(cur.saved),
+      sub: `${fmt(cur.inc)} in / ${fmt(cur.exp)} out`,
+      dir: deltaDir(cur.saved),
+    });
+  }
+
+  // Staging vs target pot
+  const stagingTarget = (STATE.peaMonthly || 700) + 200;
+  if (STATE.boursoLdds != null) {
+    const amt = STATE.boursoLdds - stagingTarget;
+    const pct = stagingTarget ? (amt / stagingTarget) * 100 : null;
+    out.staging = {
+      dir: deltaDir(amt),
+      text: `Staging ${fmtDelta(amt, pct)} vs full pot ${fmt(stagingTarget)}`,
+      short: `Staging ${fmtDelta(amt, pct)} vs ${fmt(stagingTarget)} pot`,
+      amount: amt, pct, vs: 'full monthly pot',
+    };
+    out.overview.push({
+      lbl: 'Staging vs pot',
+      val: fmtDelta(amt, pct),
+      sub: `${fmt(STATE.boursoLdds)} now · target ${fmt(stagingTarget)}`,
+      dir: deltaDir(amt),
+    });
+  }
+
+  // Hero headline: vs last check (checkpoint)
+  const prev = readNwCheckpoint();
+  if (prev && prev.nw > 0 && nw > 0) {
+    const amt = nw - prev.nw;
+    const pct = (amt / prev.nw) * 100;
+    const when = prev.at
+      ? new Date(prev.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+      : 'last check';
+    out.hero = {
+      dir: deltaDir(amt),
+      text: `${fmtDelta(amt, pct)} vs last check (${fmt(prev.nw)} · ${when})`,
+      amount: amt, pct, vs: 'last check',
+    };
+  } else if (pea && cost) {
+    // First visit fallback: lead with PEA gain vs invested
+    const amt = pea - cost;
+    const pct = cost ? (amt / cost) * 100 : null;
+    out.hero = {
+      dir: deltaDir(amt),
+      text: `PEA ${fmtDelta(amt, pct)} vs capital invested`,
+      amount: amt, pct, vs: 'capital invested',
+    };
+  }
+
+  // Extra overview encouragement
+  const last3 = byM.slice(-3).reduce((s, m) => s + m.saved, 0);
+  const last12 = byM.slice(-12).reduce((s, m) => s + m.saved, 0);
+  if (byM.length >= 2) {
+    out.overview.push({ lbl: 'Saved last 3 months', val: (last3 >= 0 ? '+' : '−') + fmt(last3), sub: 'wallet income − spend', dir: deltaDir(last3) });
+    out.overview.push({ lbl: 'Saved last 12 months', val: (last12 >= 0 ? '+' : '−') + fmt(last12), sub: 'wallet income − spend', dir: deltaDir(last12) });
+  }
+  const livretGap = Math.max(0, LIVRET_TARGET - livret);
+  out.overview.push({
+    lbl: 'Livret buffer',
+    val: fmt(livret),
+    sub: livretGap > 0 ? `${fmt(livretGap)} to €8k floor` : '≥ €8k floor — surplus → PEA',
+    dir: livretGap > 0 ? 'flat' : 'up',
+  });
+
+  return out;
+}
+
+function setTabBoost(id, boost) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (!boost) { el.style.display = 'none'; el.textContent = ''; return; }
+  el.style.display = 'block';
+  el.className = 'tab-boost ' + (boost.dir || 'flat');
+  el.innerHTML = `<b class="blur-val">${boost.short || boost.text}</b>`;
+}
+
 function renderHero() {
   const nw = netWorth();
   const held = yearsHeld(STATE.peaStartedAt);
   const tax = peaNetAfter5y(STATE.pea, STATE.monthlyCostBasis);
   const yearsLeft = Math.max(0, 5 - held);
+  const boosts = computeBoosts(STATE.transactions);
+
   document.getElementById('nw-hero-val').textContent = nw ? fmt(nw) : '—';
+
+  const deltaEl = document.getElementById('hero-delta');
+  if (deltaEl) {
+    if (boosts.hero) {
+      deltaEl.textContent = boosts.hero.text;
+      deltaEl.className = 'hero-delta blur-val ' + boosts.hero.dir;
+    } else {
+      deltaEl.textContent = '';
+      deltaEl.className = 'hero-delta blur-val flat';
+    }
+  }
+
+  const chipsEl = document.getElementById('hero-boosts');
+  if (chipsEl) {
+    chipsEl.innerHTML = boosts.chips.slice(0, 4).map(c =>
+      `<div class="hero-boost-chip ${c.dir}"><b class="blur-val">${c.short}</b></div>`
+    ).join('');
+  }
+
   const balAge = STATE.balanceDate ? new Date(STATE.balanceDate) : null;
   const ageTxt = balAge
     ? `Balances ${balAge.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
     : 'Balances pending';
   document.getElementById('hero-support').textContent =
     STATE.pea
-      ? `PEA ${fmt(STATE.pea)} gross → ~${fmt(tax.net)} net after 5 years (PS 17.2% on ${fmt(tax.gain)} gain; capital untaxed). ${yearsLeft > 0.05 ? `${yearsLeft.toFixed(1)}y left to that mark.` : 'Already past 5 years.'} ${ageTxt}.`
+      ? `PEA ${fmt(STATE.pea)} gross → ~${fmt(tax.net)} net after 5 years (PS 17.2% on ${fmt(tax.gain)} gain). ${yearsLeft > 0.05 ? `${yearsLeft.toFixed(1)}y left to that mark.` : 'Already past 5 years.'} ${ageTxt}.`
       : `${ageTxt}. Hit Refresh after Drive has a finary-balances.json.`;
 
   const bits = [
@@ -951,6 +1175,11 @@ function renderHero() {
   document.getElementById('hero-split').innerHTML = bits.map(([lbl, v]) =>
     `<div><span>${lbl}</span><strong class="blur-val">${fmt(v)}</strong></div>`
   ).join('');
+
+  setTabBoost('pea-tab-boost', boosts.pea);
+  setTabBoost('livret-tab-boost', boosts.livret);
+  setTabBoost('spend-tab-boost', boosts.spend);
+  setTabBoost('staging-tab-boost', boosts.staging);
 }
 
 function monthBucket(txs) {
@@ -1109,36 +1338,36 @@ function expectedPeaThisMonth(txs) {
 function renderOverviewBoosts(txs) {
   const el = document.getElementById('overview-boosts');
   if (!el) return;
+  const boosts = computeBoosts(txs);
   const tax = peaNetAfter5y(STATE.pea, STATE.monthlyCostBasis);
-  const series = livretSeries();
-  let mom = null;
-  if (series.length >= 2) {
-    const prev = series[series.length - 2].balance;
-    const cur = series[series.length - 1].balance;
-    if (prev) mom = ((cur - prev) / prev) * 100;
-  }
   const exp = expectedPeaThisMonth(txs);
-  const byM = savingsByMonth(txs);
-  const last = byM[byM.length - 1];
-  const last3 = byM.slice(-3).reduce((s, m) => s + m.saved, 0);
-  const last12 = byM.slice(-12).reduce((s, m) => s + m.saved, 0);
-  const livretGap = Math.max(0, LIVRET_TARGET - (STATE.livretA || 0));
-  const staging = STATE.boursoLdds;
-  const cards = [];
-  if (mom != null) cards.push({ lbl: 'Livret vs last statement', val: (mom >= 0 ? '+' : '') + mom.toFixed(1) + '%', sub: 'statement-to-statement growth' });
-  cards.push(
-    { lbl: 'Expected PEA (pace)', val: fmt(exp.expectedToPea), sub: `if spend pace holds · pot ~${fmt(exp.stagingTarget)}` },
-    { lbl: 'Saved this month', val: (last && last.saved >= 0 ? '+' : '−') + fmt(last ? last.saved : 0), sub: last ? `${fmt(last.inc)} in / ${fmt(last.exp)} out` : '—' },
-    { lbl: 'Saved last 3 months', val: (last3 >= 0 ? '+' : '−') + fmt(last3), sub: 'wallet income − spend' },
-    { lbl: 'Saved last 12 months', val: (last12 >= 0 ? '+' : '−') + fmt(last12), sub: 'wallet income − spend' },
-    { lbl: 'Livret buffer', val: fmt(STATE.livretA || 0), sub: livretGap > 0 ? `${fmt(livretGap)} to €8k floor` : '≥ €8k floor — surplus → PEA' },
-    { lbl: 'Staging (Bourso LDDS)', val: staging != null ? fmt(staging) : 'Set in Settings', sub: staging != null ? 'earmarked for PEA · not in NW' : 'manual — Finary keeps 2 slots' },
-  );
-  el.innerHTML = cards.map(c => `<div class="boost-card"><span>${c.lbl}</span><strong class="blur-val">${c.val}</strong><em>${c.sub}</em></div>`).join('');
+  const cards = boosts.overview.map(c => ({ ...c }));
+  cards.unshift({
+    lbl: 'Expected PEA (pace)',
+    val: fmt(exp.expectedToPea),
+    sub: `if spend pace holds · pot ~${fmt(exp.stagingTarget)}`,
+    dir: 'up',
+  });
+  if (boosts.hero) {
+    cards.unshift({
+      lbl: 'Net worth vs last check',
+      val: fmtDelta(boosts.hero.amount, boosts.hero.pct),
+      sub: boosts.hero.vs === 'last check' ? boosts.hero.text.replace(fmtDelta(boosts.hero.amount, boosts.hero.pct) + ' ', '') : boosts.hero.text,
+      dir: boosts.hero.dir,
+    });
+  }
+  el.innerHTML = cards.map(c =>
+    `<div class="boost-card"><span>${c.lbl}</span><strong class="blur-val ${c.dir === 'up' ? 'pos' : (c.dir === 'down' ? 'neg' : '')}">${c.val}</strong><em>${c.sub}</em></div>`
+  ).join('');
   const rule = document.getElementById('money-rule');
   if (rule) rule.textContent = 'EOM: remaining Bourso LDDS staging → PEA; top Livret only if under €8k. LCL LDDS stays off this dashboard (known spends / IOUs).';
   const gainEl = document.getElementById('overview-pea-gain');
-  if (gainEl) gainEl.innerHTML = `PEA unrealized gain <strong class="blur-val">${fmt(tax.gain)}</strong> · ~<strong class="blur-val">${fmt(tax.net)}</strong> net after 5y`;
+  if (gainEl) {
+    const peaBoost = boosts.pea;
+    gainEl.innerHTML = peaBoost
+      ? `<span class="${peaBoost.dir}">PEA <strong class="blur-val">${fmtDelta(peaBoost.amount, peaBoost.pct)}</strong> vs capital invested · ~<strong class="blur-val">${fmt(tax.net)}</strong> net after 5y</span>`
+      : `PEA · ~<strong class="blur-val">${fmt(tax.net)}</strong> net after 5y`;
+  }
 }
 function renderBudgets(txs) {
   const el = document.getElementById('budget-list');
@@ -1620,6 +1849,8 @@ async function refreshAll() {
     STATE.driveOk = true;
     await fetchSavings();
     renderAll(STATE.transactions);
+    // Snapshot NW after a successful Refresh so the next visit can show “up by X% vs last check”
+    commitNwCheckpoint(netWorth(), true);
     const nBud = (STATE.budgets || []).length;
     if (status) status.innerHTML = [
       `<span class="pill pill-ok">Refresh ✓</span>`,
