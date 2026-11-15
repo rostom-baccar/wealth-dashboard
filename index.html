@@ -1838,7 +1838,7 @@ function drawPeaProjection() {
   }));
   const baseYear = new Date().getFullYear();
   const labels = seriesByRate[0].points.map(p =>
-    p.year === 0 ? `Now · ${baseYear}` : `${baseYear + p.year}`
+    p.year === 0 ? `Now · ${baseYear}` : `${baseYear + p.year} (+${p.year}y)`
   );
   const curve = chartLineStyle('peaProj', { allowStep: false });
   const datasets = [];
