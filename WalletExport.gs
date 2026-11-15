@@ -58,9 +58,11 @@ function exportWalletToSheet() {
         return [dateStr, type, category, amount, 'EUR', memo, wallet];
       });
 
+    const budgets = buildBudgetsFromDb_(db, categories);
+
     writeToSheet(trans);
-    writeJsonSnapshot(trans); // <-- NEW: also write JSON for standalone dashboard
-    Logger.log('Export complete: ' + trans.length + ' transactions');
+    writeJsonSnapshot(trans, budgets); // also write JSON for standalone dashboard
+    Logger.log('Export complete: ' + trans.length + ' transactions, ' + budgets.length + ' budgets');
 
   } catch(e) {
     Logger.log('ERROR: ' + e.message + '\n' + e.stack);
@@ -74,7 +76,40 @@ function exportWalletToSheet() {
 // WRITE JSON SNAPSHOT — standalone dashboard reads this directly
 // Format: { lastSync, transactions: [{date,type,category,amount,memo}] }
 // ================================================================
-function writeJsonSnapshot(rows) {
+/** Build dashboard budgets from Wallet Manager budget + budgetCategory tables. */
+function buildBudgetsFromDb_(db, categories) {
+  const skip = { 'Month progress bar': 1, 'Month progress bar compensation': 1 };
+  const linksByBudget = {};
+  (db['budgetCategory'] || []).forEach(bc => {
+    const bid = bc['budget_id'];
+    if (!linksByBudget[bid]) linksByBudget[bid] = [];
+    linksByBudget[bid].push(bc['category_id']);
+  });
+  const out = [];
+  (db['budget'] || []).forEach(b => {
+    const name = String(b.name || '').trim();
+    if (skip[name] || name.toLowerCase().indexOf('month progress') === 0) return;
+    const catNames = [];
+    const seen = {};
+    (linksByBudget[b.id] || []).forEach(cid => {
+      const cn = (categories[cid] && categories[cid].name) || '';
+      if (cn && !skip[cn] && !seen[cn]) {
+        seen[cn] = 1;
+        catNames.push(cn);
+      }
+    });
+    out.push({
+      id: b.id,
+      name: name || ('Budget ' + b.id),
+      amount: (b.amount || 0) / 100.0,
+      period: b.period,
+      categories: catNames,
+    });
+  });
+  return out;
+}
+
+function writeJsonSnapshot(rows, budgets) {
   const folder = DriveApp.getFolderById(SQLITE_FOLDER_ID);
 
   const snapshot = {
@@ -87,7 +122,8 @@ function writeJsonSnapshot(rows) {
       currency: r[4],
       memo:     r[5],
       wallet:   r[6],
-    }))
+    })),
+    budgets: budgets || [],
   };
 
   // Merge Finary balances if Cursor (or another sync) wrote finary-balances.json
@@ -103,6 +139,8 @@ function writeJsonSnapshot(rows) {
       Logger.log('Preserved previous snapshot.balances');
     }
   }
+  if (!snapshot.balances) snapshot.balances = {};
+  snapshot.balances.budgets = budgets || [];
 
   const json = JSON.stringify(snapshot);
   const file = upsertJsonFile_(folder, JSON_FILE_NAME, json);
@@ -386,7 +424,7 @@ function parseSQLite(bytes) {
   }
 
   const result = {};
-  ['trans', 'category', 'wallet'].forEach(tbl => {
+  ['trans', 'category', 'wallet', 'budget', 'budgetCategory'].forEach(tbl => {
     const root = tableRoots[tbl];
     if (!root) return;
     const cols = tableColNames[tbl] || [];

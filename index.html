@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
+
 :root {
   --night: #070d16;
   --deep: #0b1524;
@@ -240,11 +241,57 @@ body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
 @keyframes rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 @keyframes drift{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(1.5%,2%,0) scale(1.03)}}
+
+
+.hero{min-height:auto;padding:28px 24px 24px;margin-bottom:18px}
+.hero-brand{font-size:clamp(40px,10vw,72px);margin-bottom:10px}
+.hero-amount{font-size:clamp(28px,5.5vw,40px)}
+.tabs{
+  display:flex;gap:4px;flex-wrap:wrap;padding:4px;margin:0 0 18px;
+  border:1px solid var(--line);border-radius:14px;background:rgba(16,28,44,.55);
+  position:sticky;top:calc(8px + var(--safe-top));z-index:20;backdrop-filter:blur(12px);
+}
+.tab-btn{
+  border:0;background:transparent;color:var(--muted);cursor:pointer;
+  padding:10px 14px;border-radius:10px;font:600 12px/1 var(--font);
+  letter-spacing:.02em;
+}
+.tab-btn.on{background:var(--aegean);color:var(--night)}
+.tab-panel{display:none;animation:fade .35s ease both}
+.tab-panel.on{display:block}
+.boost-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin:14px 0 18px}
+.boost-card{
+  padding:14px;border-radius:var(--radius);border:1px solid var(--line);
+  background:rgba(16,28,44,.72);box-shadow:var(--shadow);
+}
+.boost-card span{display:block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.boost-card strong{display:block;margin-top:8px;font-family:var(--mono);font-size:20px;font-weight:600;color:var(--gold)}
+.boost-card em{display:block;margin-top:6px;font-style:normal;font-size:11px;color:var(--muted);line-height:1.35}
+.range-row,.traj-toggle{display:inline-flex;gap:4px;margin-bottom:12px;padding:4px;border-radius:12px;border:1px solid var(--line);background:rgba(16,28,44,.6);flex-wrap:wrap}
+.range-row button,.traj-toggle button{
+  border:0;background:transparent;padding:8px 12px;border-radius:9px;
+  font:600 11px/1 var(--font);letter-spacing:.04em;text-transform:uppercase;color:var(--muted);cursor:pointer;
+}
+.range-row button.on,.traj-toggle button.on{background:var(--aegean);color:var(--night)}
+.muted{color:var(--muted);font-size:13px;line-height:1.5}
+.budget-row{margin:12px 0 16px}
+.budget-head{display:flex;justify-content:space-between;gap:10px;font-size:13px;font-weight:600;margin-bottom:6px}
+.budget-cats{font-size:11px;color:var(--muted);margin-top:6px}
+.cat-fill.over{background:linear-gradient(90deg,#8b3a3a,var(--bad))}
+.hold-row{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.hold-nums{text-align:right}
+.hold-nums strong{display:block;font-family:var(--mono);font-size:16px}
+.hold-nums span{display:block;font-family:var(--mono);font-size:12px;margin-top:3px}
+.pos{color:var(--ok)}.neg{color:var(--bad)}
+.money-rule{font-size:12px;color:var(--muted);max-width:52em;margin:8px 0 0;line-height:1.5}
+body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,body.anon .hold-row{filter:blur(12px)!important;opacity:.15!important;user-select:none!important}
+
 </style>
 </head>
 <body class="locked">
 <div id="app-mount"></div>
 <template id="app-shell-template">
+
 <div id="app-shell" class="shell">
   <div class="topbar">
     <div class="topbar-meta" id="sync-time">Loading…</div>
@@ -261,6 +308,7 @@ body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
     </div>
   </div>
   <div class="status-row" id="status-bar"></div>
+
   <section class="hero" aria-label="Net worth">
     <div class="hero-atmosphere" aria-hidden="true"></div>
     <div class="hero-brand">Rostom</div>
@@ -270,18 +318,38 @@ body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
     <div class="hero-split" id="hero-split"></div>
     <div class="hero-cta">
       <button class="btn btn-primary" type="button" onclick="refreshAll()">Refresh live data</button>
-      <button class="btn" type="button" onclick="document.getElementById('zone-cashflow').scrollIntoView({behavior:'smooth'})">This month</button>
+      <button class="btn" type="button" onclick="setTab('spend')">This month</button>
     </div>
   </section>
-  <div class="ai-brief" id="ai-box">
-    <span class="ai-tag">Brief</span>
-    <button type="button" class="ai-refresh" id="ai-refresh-btn" onclick="forceAiRefresh()" title="Regenerate">↻</button>
-    <div id="ai-body"><span class="ai-loading">…</span></div>
-  </div>
-  <section class="section" id="zone-cashflow">
+
+  <nav class="tabs" role="tablist" aria-label="Dashboard sections">
+    <button type="button" class="tab-btn on" data-tab="overview" onclick="setTab('overview')">Overview</button>
+    <button type="button" class="tab-btn" data-tab="spend" onclick="setTab('spend')">Spend</button>
+    <button type="button" class="tab-btn" data-tab="pea" onclick="setTab('pea')">PEA</button>
+    <button type="button" class="tab-btn" data-tab="livret" onclick="setTab('livret')">Livret A</button>
+    <button type="button" class="tab-btn" data-tab="staging" onclick="setTab('staging')">Staging</button>
+  </nav>
+
+  <section class="tab-panel on" id="panel-overview">
+    <div class="section-head">
+      <h2>How you're doing</h2>
+      <p>Frequent check-ins: growth, expected PEA, and what you saved.</p>
+    </div>
+    <p id="overview-pea-gain" class="traj-note"></p>
+    <div class="boost-grid" id="overview-boosts"></div>
+    <p class="money-rule" id="money-rule"></p>
+    <div class="ai-brief" id="ai-box" style="margin-top:22px">
+      <span class="ai-tag">Brief</span>
+      <button type="button" class="ai-refresh" id="ai-refresh-btn" onclick="forceAiRefresh()" title="Regenerate">↻</button>
+      <div id="ai-body"><span class="ai-loading">…</span></div>
+    </div>
+    <p class="muted" style="margin-top:18px">Open the <button type="button" class="btn" onclick="setTab('pea')" style="display:inline-block;padding:6px 10px">PEA</button> tab for per-ETF performance, projections, and chart ranges (1M→Max, default 1Y).</p>
+  </section>
+
+  <section class="tab-panel" id="panel-spend">
     <div class="section-head">
       <h2>This month</h2>
-      <p id="cashflow-sub">Income, spend, and the latest movements.</p>
+      <p id="cashflow-sub">Income, budgets, spend, and latest movements.</p>
     </div>
     <div class="month-grid">
       <div>
@@ -291,6 +359,8 @@ body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
         </div>
         <div class="stat"><div class="stat-lbl">Net</div><div class="stat-val blur-val" id="stat-net">—</div></div>
         <div id="inc-breakdown" class="inc-breakdown" style="margin-top:14px"></div>
+        <div class="section-head" style="margin:22px 0 8px"><h2 style="font-size:18px">Budgets</h2><p>From Wallet Manager · vs actual this month</p></div>
+        <div id="budget-list"></div>
         <div id="cat-bars" style="margin-top:18px"></div>
       </div>
       <div>
@@ -299,11 +369,14 @@ body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
       </div>
     </div>
   </section>
-  <section class="section" id="zone-trajectory">
+
+  <section class="tab-panel" id="panel-pea">
     <div class="section-head">
-      <h2>PEA trajectory</h2>
-      <p>Contributions so far, then a simple forward path — gross and net after the 5-year mark (PS on gain).</p>
+      <h2>PEA</h2>
+      <p>Per-fund performance, contributions, and a forward path — gross / net after 5y.</p>
     </div>
+    <div id="pea-holdings" style="margin-bottom:18px"></div>
+    <div class="range-row" role="group" aria-label="Chart range"><button type="button" data-range="1M" onclick="setChartRange('1M')">1M</button><button type="button" data-range="3M" onclick="setChartRange('3M')">3M</button><button type="button" data-range="1Y" onclick="setChartRange('1Y')">1Y</button><button type="button" data-range="3Y" onclick="setChartRange('3Y')">3Y</button><button type="button" data-range="5Y" onclick="setChartRange('5Y')">5Y</button><button type="button" data-range="Max" onclick="setChartRange('Max')">Max</button></div>
     <div class="traj-toggle" role="group" aria-label="Projection view">
       <button type="button" class="on" id="tog-gross" onclick="setProjMode('gross')">Gross</button>
       <button type="button" id="tog-net" onclick="setProjMode('net')">Net after 5y</button>
@@ -312,27 +385,57 @@ body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
     <div class="chart-wrap"><canvas id="trajChart"></canvas></div>
     <p class="traj-note" id="traj-note"></p>
   </section>
+
+  <section class="tab-panel" id="panel-livret">
+    <div class="section-head">
+      <h2>Livret A</h2>
+      <p>Buffer money you are not planning to spend — separate from LCL LDDS sinking funds.</p>
+    </div>
+    <div class="stat" style="max-width:280px;margin-bottom:12px">
+      <div class="stat-lbl">Balance</div>
+      <div class="stat-val blur-val" id="livret-bal">—</div>
+    </div>
+    <p class="traj-note" id="livret-note"></p>
+    <div class="range-row" role="group" aria-label="Chart range" style="margin-top:14px"><button type="button" data-range="1M" onclick="setChartRange('1M')">1M</button><button type="button" data-range="3M" onclick="setChartRange('3M')">3M</button><button type="button" data-range="1Y" onclick="setChartRange('1Y')">1Y</button><button type="button" data-range="3Y" onclick="setChartRange('3Y')">3Y</button><button type="button" data-range="5Y" onclick="setChartRange('5Y')">5Y</button><button type="button" data-range="Max" onclick="setChartRange('Max')">Max</button></div>
+    <div class="chart-wrap"><canvas id="livretChart"></canvas></div>
+    <div class="section-head" style="margin-top:22px"><h2 style="font-size:18px">Recent withdrawals</h2><p>Drops between statement balances</p></div>
+    <div class="feed" id="livret-withdrawals"></div>
+  </section>
+
+  <section class="tab-panel" id="panel-staging">
+    <div class="section-head">
+      <h2>Bourso LDDS staging</h2>
+      <p>The live pot for month-end PEA funding — watch it shrink when you top up allowance.</p>
+    </div>
+    <div id="staging-body"></div>
+  </section>
 </div>
+
 <div id="modal-overlay" class="modal-overlay">
   <div class="modal"><div class="modal-pad">
     <h3>Settings</h3>
-    <p class="hint">PEA, Livret A and cost basis come from Finary (via sync). Only PEE is manual here.</p>
+    <p class="hint">PEA, Livret A and cost basis come from Finary (via sync). PEE and Bourso LDDS are manual here.</p>
     <div id="modal-auto-block" class="finary-box" style="display:none"><div id="modal-auto-summary"></div></div>
     <div id="modal-finary-waiting" class="finary-wait" style="display:none">No Finary balances yet. Ask Cursor to sync, then Refresh.</div>
     <label for="modal-pee">PEE (Epsor) €</label>
     <input id="modal-pee" type="number" step="0.01">
+    <label for="modal-ldds">Bourso LDDS staging €</label>
+    <input id="modal-ldds" type="number" step="0.01" placeholder="Current LDDS balance">
+    <p class="hint">Not counted in net worth. Used on the Staging tab as expected PEA fuel.</p>
     <label for="modal-gemini">Gemini API key (browser only)</label>
     <input id="modal-gemini" type="password" autocomplete="off" placeholder="AIza…">
     <label for="modal-export-url">Apps Script web app URL</label>
     <input id="modal-export-url" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec">
-    <p class="hint">Needed for live Refresh. Unlock still loads the encrypted vault without it.</p>
+    <p class="hint">Needed for live Refresh. Unlock still loads the encrypted vault without it. After updating WalletExport.gs, redeploy the web app.</p>
     <div class="modal-actions">
       <button type="button" class="btn btn-primary" onclick="saveBalancesFromModal()">Save</button>
       <button type="button" class="btn" onclick="hideBalanceModal()">Cancel</button>
     </div>
   </div></div>
 </div>
+
 </template>
+
 <div id="unlock-overlay">
   <div class="unlock-card" onclick="event.stopPropagation()">
     <div class="unlock-stripe"></div>
@@ -349,6 +452,7 @@ body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
 </div>
 
 <script>
+
 const LS_SNAPSHOT = 'wallet_snapshot_file_id';
 const LS_BALANCES = 'wallet_balances';
 const LS_GEMINI = 'gemini_api_key';
@@ -360,15 +464,28 @@ let vaultPass = null;
 let vaultUnlocked = false;
 let anonMode = localStorage.getItem('dashboard_anon') === '1';
 let projMode = 'both';
+let chartRange = localStorage.getItem('dashboard_chart_range') || '1Y';
+let activeTab = localStorage.getItem('dashboard_tab') || 'overview';
 let aiGenerating = false;
 const charts = {};
+const LIVRET_TARGET = 8000;
+const CHART_RANGES = [
+  { id: '1M', days: 30 },
+  { id: '3M', days: 90 },
+  { id: '1Y', days: 365 },
+  { id: '3Y', days: 365 * 3 },
+  { id: '5Y', days: 365 * 5 },
+  { id: 'Max', days: null },
+];
 
 const STATE = {
-  pea: 0, livretA: 0, pee: 0, checking: null,
+  pea: 0, livretA: 0, pee: 0, checking: null, boursoLdds: null,
   monthlyNetIncome: 0, peaMonthly: 0, peaMonthsActive: 0, peaStartedAt: null,
   peaAlloc: [],
   monthlyCostBasis: 0,
   peaContributions: [],
+  livretHistory: [],
+  budgets: [],
   transactions: [],
   savingsData: [],
   finaryOk: false, driveOk: false, savingsOk: false,
@@ -458,9 +575,10 @@ async function decryptVaultBundle(bundle, passphrase) {
 
 function clearSensitiveState() {
   Object.assign(STATE, {
-    pea: 0, livretA: 0, pee: 0, checking: null,
+    pea: 0, livretA: 0, pee: 0, checking: null, boursoLdds: null,
     monthlyNetIncome: 0, peaMonthly: 0, peaMonthsActive: 0, peaStartedAt: null,
-    monthlyCostBasis: 0, peaContributions: [], transactions: [], savingsData: [],
+    monthlyCostBasis: 0, peaContributions: [], livretHistory: [], budgets: [],
+    peaAlloc: [], transactions: [], savingsData: [],
     finaryOk: false, driveOk: false, savingsOk: false,
     balancesSource: null, balanceDate: null, lastSnapshotSync: null,
     snapshotFetchError: null, snapshotSource: null,
@@ -521,6 +639,7 @@ function persistBalancesState() {
   try {
     localStorage.setItem(LS_BALANCES, JSON.stringify({
       pea: STATE.pea, livretA: STATE.livretA, pee: STATE.pee,
+      boursoLdds: STATE.boursoLdds,
       costBasis: STATE.monthlyCostBasis,
       monthlyNetIncome: STATE.monthlyNetIncome,
       peaMonthly: STATE.peaMonthly,
@@ -528,6 +647,8 @@ function persistBalancesState() {
       peaStartedAt: STATE.peaStartedAt || undefined,
       peaAlloc: STATE.peaAlloc,
       peaContributions: STATE.peaContributions,
+      livretHistory: STATE.livretHistory,
+      budgets: STATE.budgets,
       date: STATE.balanceDate || new Date().toISOString(),
       source: STATE.balancesSource || (STATE.finaryOk ? 'finary' : 'manual'),
     }));
@@ -555,12 +676,15 @@ function applyBalancesPayload(b, { persist = true } = {}) {
   if (b.livretA != null) STATE.livretA = +b.livretA;
   if (b.pee != null) STATE.pee = +b.pee;
   if (b.checking != null) STATE.checking = +b.checking;
+  if (b.boursoLdds != null) STATE.boursoLdds = +b.boursoLdds;
   if (b.costBasis != null) STATE.monthlyCostBasis = +b.costBasis;
   if (b.monthlyNetIncome != null) STATE.monthlyNetIncome = +b.monthlyNetIncome;
   if (Array.isArray(b.peaAlloc) && b.peaAlloc.length) STATE.peaAlloc = b.peaAlloc;
   if (b.peaMonthsActive != null) STATE.peaMonthsActive = +b.peaMonthsActive;
   if (b.peaStartedAt) STATE.peaStartedAt = b.peaStartedAt;
   if (Array.isArray(b.peaContributions)) STATE.peaContributions = b.peaContributions;
+  if (Array.isArray(b.livretHistory)) STATE.livretHistory = b.livretHistory;
+  if (Array.isArray(b.budgets)) STATE.budgets = b.budgets;
   STATE.balanceDate = b.updatedAt || b.date || new Date().toISOString();
   STATE.finaryOk = !!(STATE.pea || STATE.livretA);
   STATE.balancesSource = (b.source === 'finary' || STATE.finaryOk) ? 'finary' : (b.source || 'snapshot');
@@ -587,6 +711,10 @@ function applySnapshotData(data) {
   STATE.driveOk = true;
   STATE.lastSnapshotSync = data.lastSync || data.servedAt || null;
   if (data.balances) applyBalancesPayload(data.balances);
+  if (Array.isArray(data.budgets) && data.budgets.length) {
+    STATE.budgets = data.budgets;
+    try { persistBalancesState(); } catch (_) {}
+  }
 }
 
 async function unlockWithPassphrase(passphrase, remember) {
@@ -722,6 +850,8 @@ function showBalanceModal() {
       (STATE.peaMonthly ? ` · ~${fmt(STATE.peaMonthly)}/mo` : '');
   }
   document.getElementById('modal-pee').value = STATE.pee || '';
+  const ldds = document.getElementById('modal-ldds');
+  if (ldds) ldds.value = STATE.boursoLdds != null ? STATE.boursoLdds : '';
   document.getElementById('modal-gemini').value = localStorage.getItem(LS_GEMINI) || '';
   document.getElementById('modal-export-url').value = localStorage.getItem(LS_EXPORT_URL) || '';
   document.getElementById('modal-overlay').style.display = 'flex';
@@ -729,6 +859,8 @@ function showBalanceModal() {
 function hideBalanceModal() { document.getElementById('modal-overlay').style.display = 'none'; }
 function saveBalancesFromModal() {
   const pee = document.getElementById('modal-pee').value;
+  const lddsEl = document.getElementById('modal-ldds');
+  const ldds = lddsEl ? lddsEl.value : '';
   const gemini = (document.getElementById('modal-gemini')?.value || '').trim();
   const exportUrl = (document.getElementById('modal-export-url')?.value || '').trim();
   if (gemini) localStorage.setItem(LS_GEMINI, gemini);
@@ -736,6 +868,7 @@ function saveBalancesFromModal() {
   if (exportUrl) localStorage.setItem(LS_EXPORT_URL, exportUrl);
   else localStorage.removeItem(LS_EXPORT_URL);
   if (pee !== '') STATE.pee = +pee;
+  if (lddsEl) STATE.boursoLdds = ldds === '' ? null : +ldds;
   if (STATE.pea || STATE.livretA) STATE.balancesSource = 'finary';
   persistBalancesState();
   hideBalanceModal();
@@ -848,6 +981,200 @@ function renderCashflow(txs) {
   }).join('') || '<p style="color:var(--muted);font-size:13px;padding:12px 0">No movements.</p>';
 }
 
+
+function rangeCutoff() {
+  const spec = CHART_RANGES.find(r => r.id === chartRange) || CHART_RANGES[2];
+  if (spec.days == null) return null;
+  return new Date(Date.now() - spec.days * 86400000);
+}
+function setChartRange(id) {
+  chartRange = id;
+  localStorage.setItem('dashboard_chart_range', id);
+  document.querySelectorAll('[data-range]').forEach(btn => {
+    btn.classList.toggle('on', btn.getAttribute('data-range') === id);
+  });
+  drawTrajectory();
+  drawLivretChart();
+}
+function setTab(id, persist = true) {
+  activeTab = id;
+  if (persist) localStorage.setItem('dashboard_tab', id);
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('on', btn.getAttribute('data-tab') === id);
+  });
+  document.querySelectorAll('.tab-panel').forEach(panel => {
+    panel.classList.toggle('on', panel.id === 'panel-' + id);
+  });
+  requestAnimationFrame(() => {
+    if (id === 'pea') drawTrajectory();
+    if (id === 'livret') drawLivretChart();
+  });
+}
+function parseLivretDate(dmy) {
+  if (!dmy) return null;
+  const m = String(dmy).match(/(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);
+  if (!m) { const d = new Date(dmy); return isNaN(+d) ? null : d; }
+  return new Date(+m[3], +m[2] - 1, +m[1]);
+}
+function livretSeries() {
+  const rows = (STATE.livretHistory || [])
+    .map(p => ({ date: parseLivretDate(p.to || p.from), balance: +p.balance }))
+    .filter(p => p.date && !isNaN(+p.date) && p.balance != null)
+    .sort((a, b) => a.date - b.date);
+  if (STATE.livretA != null) rows.push({ date: new Date(), balance: +STATE.livretA });
+  return rows;
+}
+function livretWithdrawals() {
+  const series = livretSeries();
+  const out = [];
+  for (let i = 1; i < series.length; i++) {
+    const delta = series[i].balance - series[i - 1].balance;
+    if (delta < -1) out.push({ date: series[i].date, amount: -delta, balance: series[i].balance });
+  }
+  return out.reverse();
+}
+function monthKey(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+function savingsByMonth(txs) {
+  const map = {};
+  (txs || []).forEach(t => {
+    if (t.category === 'Month progress bar' || t.category === 'Month progress bar compensation') return;
+    const k = monthKey(t.date);
+    if (!map[k]) map[k] = { inc: 0, exp: 0 };
+    if (isIncomeTx(t)) map[k].inc += Math.abs(+t.amount || 0);
+    else if (isExpenseTx(t)) map[k].exp += Math.abs(+t.amount || 0);
+  });
+  return Object.keys(map).sort().map(k => ({ key: k, saved: map[k].inc - map[k].exp, inc: map[k].inc, exp: map[k].exp }));
+}
+function expectedPeaThisMonth(txs) {
+  const month = monthBucket(txs || []);
+  const exp = month.filter(isExpenseTx).reduce((s, t) => s + Math.abs(t.amount), 0);
+  const inc = month.filter(isIncomeTx).reduce((s, t) => s + Math.abs(+t.amount || 0), 0);
+  const day = new Date().getDate();
+  const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+  const pace = day > 0 ? exp / day : 0;
+  const projectedSpend = pace * daysInMonth;
+  const stagingTarget = (STATE.peaMonthly || 700) + 200;
+  const leftoverIfPace = Math.max(0, inc - projectedSpend);
+  const expectedToPea = Math.min(stagingTarget, leftoverIfPace);
+  return { expectedToPea, projectedSpend, leftoverIfPace, stagingTarget, exp, inc, day, daysInMonth };
+}
+function renderOverviewBoosts(txs) {
+  const el = document.getElementById('overview-boosts');
+  if (!el) return;
+  const tax = peaNetAfter5y(STATE.pea, STATE.monthlyCostBasis);
+  const series = livretSeries();
+  let mom = null;
+  if (series.length >= 2) {
+    const prev = series[series.length - 2].balance;
+    const cur = series[series.length - 1].balance;
+    if (prev) mom = ((cur - prev) / prev) * 100;
+  }
+  const exp = expectedPeaThisMonth(txs);
+  const byM = savingsByMonth(txs);
+  const last = byM[byM.length - 1];
+  const last3 = byM.slice(-3).reduce((s, m) => s + m.saved, 0);
+  const last12 = byM.slice(-12).reduce((s, m) => s + m.saved, 0);
+  const livretGap = Math.max(0, LIVRET_TARGET - (STATE.livretA || 0));
+  const staging = STATE.boursoLdds;
+  const cards = [];
+  if (mom != null) cards.push({ lbl: 'Livret vs last statement', val: (mom >= 0 ? '+' : '') + mom.toFixed(1) + '%', sub: 'statement-to-statement growth' });
+  cards.push(
+    { lbl: 'Expected PEA (pace)', val: fmt(exp.expectedToPea), sub: `if spend pace holds · pot ~${fmt(exp.stagingTarget)}` },
+    { lbl: 'Saved this month', val: (last && last.saved >= 0 ? '+' : '−') + fmt(last ? last.saved : 0), sub: last ? `${fmt(last.inc)} in / ${fmt(last.exp)} out` : '—' },
+    { lbl: 'Saved last 3 months', val: (last3 >= 0 ? '+' : '−') + fmt(last3), sub: 'wallet income − spend' },
+    { lbl: 'Saved last 12 months', val: (last12 >= 0 ? '+' : '−') + fmt(last12), sub: 'wallet income − spend' },
+    { lbl: 'Livret buffer', val: fmt(STATE.livretA || 0), sub: livretGap > 0 ? `${fmt(livretGap)} to €8k floor` : '≥ €8k floor — surplus → PEA' },
+    { lbl: 'Staging (Bourso LDDS)', val: staging != null ? fmt(staging) : 'Set in Settings', sub: staging != null ? 'earmarked for PEA · not in NW' : 'manual — Finary keeps 2 slots' },
+  );
+  el.innerHTML = cards.map(c => `<div class="boost-card"><span>${c.lbl}</span><strong class="blur-val">${c.val}</strong><em>${c.sub}</em></div>`).join('');
+  const rule = document.getElementById('money-rule');
+  if (rule) rule.textContent = 'EOM: remaining Bourso LDDS staging → PEA; top Livret only if under €8k. LCL LDDS stays off this dashboard (known spends / IOUs).';
+  const gainEl = document.getElementById('overview-pea-gain');
+  if (gainEl) gainEl.innerHTML = `PEA unrealized gain <strong class="blur-val">${fmt(tax.gain)}</strong> · ~<strong class="blur-val">${fmt(tax.net)}</strong> net after 5y`;
+}
+function renderBudgets(txs) {
+  const el = document.getElementById('budget-list');
+  if (!el) return;
+  const budgets = (STATE.budgets || []).filter(b => b.name && !/month progress/i.test(b.name));
+  if (!budgets.length) {
+    el.innerHTML = '<p class="muted">No budgets yet. Redeploy Apps Script (includes budget tables) then Refresh — or ask Cursor to sync.</p>';
+    return;
+  }
+  const month = monthBucket(txs || []);
+  const spentByCat = {};
+  month.filter(isExpenseTx).forEach(t => {
+    const c = t.category || 'Other';
+    spentByCat[c] = (spentByCat[c] || 0) + Math.abs(t.amount);
+  });
+  el.innerHTML = budgets.map(b => {
+    const cats = b.categories || [];
+    let spent = 0;
+    if (cats.length) cats.forEach(c => { spent += spentByCat[c] || 0; });
+    else spent = month.filter(isExpenseTx).reduce((s, t) => s + Math.abs(t.amount), 0);
+    const limit = +b.amount || 0;
+    const pct = limit > 0 ? Math.min(100, Math.round(spent / limit * 100)) : 0;
+    const over = spent > limit && limit > 0;
+    return `<div class="budget-row"><div class="budget-head"><span>${b.name}</span><span class="blur-val ${over ? 'neg' : ''}">${fmt(spent)} / ${fmt(limit)}</span></div><div class="cat-track"><div class="cat-fill${over ? ' over' : ''}" style="width:${pct}%"></div></div><div class="budget-cats">${cats.length ? cats.join(' · ') : 'all expenses'}</div></div>`;
+  }).join('');
+}
+function renderPeaHoldings() {
+  const el = document.getElementById('pea-holdings');
+  if (!el) return;
+  const rows = STATE.peaAlloc || [];
+  if (!rows.length) { el.innerHTML = '<p class="muted">No ETF holdings in Finary snapshot yet.</p>'; return; }
+  el.innerHTML = rows.map(h => {
+    const value = +h.value || 0, shares = +h.shares || 0, pxCost = +h.costBasis || 0;
+    const cost = shares * pxCost, gain = value - cost, pct = cost > 0 ? (gain / cost) * 100 : 0;
+    return `<div class="hold-row"><div><div class="feed-cat">${h.name || 'ETF'}</div><div class="feed-meta">${shares ? shares.toLocaleString('fr-FR') + ' sh' : ''}${h.pct != null ? ' · ' + h.pct + '%' : ''}</div></div><div class="hold-nums"><strong class="blur-val">${fmt(value)}</strong><span class="blur-val ${gain >= 0 ? 'pos' : 'neg'}">${gain >= 0 ? '+' : '−'}${fmt(gain)} (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)</span></div></div>`;
+  }).join('');
+}
+function renderLivretPanel() {
+  const bal = document.getElementById('livret-bal');
+  if (bal) bal.textContent = fmt(STATE.livretA || 0);
+  const note = document.getElementById('livret-note');
+  const gap = LIVRET_TARGET - (STATE.livretA || 0);
+  if (note) note.textContent = gap > 0 ? `${fmt(gap)} below the €8k buffer floor — top up from staging before extra PEA.` : 'At or above the €8k buffer — month-end staging can go entirely to the PEA.';
+  const list = document.getElementById('livret-withdrawals');
+  if (!list) return;
+  const wd = livretWithdrawals().slice(0, 12);
+  list.innerHTML = wd.length ? wd.map(w => `<div class="feed-item"><div><div class="feed-cat">Withdrawal</div><div class="feed-meta">${w.date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} · bal ${fmt(w.balance)}</div></div><div class="feed-amt exp blur-val">−${fmt(w.amount)}</div></div>`).join('') : '<p class="muted">No statement-to-statement drops in the PDF history window.</p>';
+}
+function renderStaging() {
+  const el = document.getElementById('staging-body');
+  if (!el) return;
+  const v = STATE.boursoLdds;
+  const locked = STATE.peaMonthly || 700;
+  const exp = expectedPeaThisMonth(STATE.transactions);
+  if (v == null) {
+    el.innerHTML = `<p class="muted">Set <b>Bourso LDDS</b> in Settings after you check Bourso. Finary free tier keeps PEA + Livret only.</p><button class="btn btn-primary" type="button" onclick="showBalanceModal()">Open Settings</button>`;
+    return;
+  }
+  const shrink = Math.max(0, exp.stagingTarget - v);
+  el.innerHTML = `<div class="stat-pair"><div class="stat"><div class="stat-lbl">Staging now</div><div class="stat-val blur-val">${fmt(v)}</div></div><div class="stat"><div class="stat-lbl">PEA lock inside</div><div class="stat-val blur-val">${fmt(Math.min(v, locked))}</div></div></div><p class="traj-note" style="margin-top:14px">Target pot ~${fmt(exp.stagingTarget)} (€${locked} PEA + ~€200 surplus). ${v < exp.stagingTarget ? `Down ~${fmt(shrink)} vs full pot — that shrink is the live feedback.` : 'Full pot still intact — strong month so far.'} At EOM, remaining → PEA${(STATE.livretA || 0) < LIVRET_TARGET ? ' (after topping Livret to €8k if needed)' : ''}.</p><p class="traj-note">If spend pace holds, expected PEA ≈ <strong class="blur-val">${fmt(exp.expectedToPea)}</strong>.</p>`;
+}
+function drawLivretChart() {
+  const canvas = document.getElementById('livretChart');
+  if (!canvas) return;
+  if (charts.livret) { charts.livret.destroy(); delete charts.livret; }
+  let series = livretSeries();
+  const cut = rangeCutoff();
+  if (cut) {
+    const all = livretSeries();
+    series = series.filter(p => p.date >= cut);
+    if (series.length === 1) {
+      const prev = all.filter(p => p.date < cut).pop();
+      if (prev) series = [prev].concat(series);
+    }
+  }
+  charts.livret = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels: series.map(p => p.date.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' })),
+      datasets: [{ label: 'Livret A', data: series.map(p => Math.round(p.balance)), borderColor: '#7ea0d3', backgroundColor: 'rgba(126,160,211,0.12)', borderWidth: 2, pointRadius: 2, pointBackgroundColor: '#e8c46a', tension: 0.25, fill: true }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => fmtTip('Livret A', c.raw) } } },
+      scales: { x: { ticks: { color: '#8b9aab', font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { display: false } }, y: { ticks: { callback: v => fmtAxis(v), color: '#8b9aab', font: { size: 10 } }, grid: { color: 'rgba(126,160,211,0.08)' } } } },
+  });
+}
+
 function setProjMode(mode) {
   projMode = mode;
   ['gross', 'net', 'both'].forEach(m => {
@@ -900,8 +1227,11 @@ function drawTrajectory() {
   if (!canvas) return;
   if (charts.traj) { charts.traj.destroy(); delete charts.traj; }
 
-  const hist = buildContributionSeries();
-  const proj = projectPea(10, 0.07);
+  let hist = buildContributionSeries();
+  const cut = rangeCutoff();
+  if (cut) hist = hist.filter(p => p.date >= cut);
+  const projYears = (chartRange === '1M' || chartRange === '3M') ? 3 : (chartRange === '1Y' ? 5 : 10);
+  const proj = projectPea(projYears, 0.07);
   const histLabels = hist.map(p => p.date.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }));
   const funded = hist.map(p => Math.round(p.funded));
   const liveVal = hist.map(p => p.value != null ? Math.round(p.value) : null);
@@ -1019,9 +1349,19 @@ function updateStatus() {
 
 function renderAll(txs) {
   renderHero();
+  renderOverviewBoosts(txs || []);
   renderCashflow(txs || []);
+  renderBudgets(txs || []);
+  renderPeaHoldings();
+  renderLivretPanel();
+  renderStaging();
   drawTrajectory();
+  drawLivretChart();
   updateStatus();
+  setTab(activeTab, false);
+  document.querySelectorAll('[data-range]').forEach(btn => {
+    btn.classList.toggle('on', btn.getAttribute('data-range') === chartRange);
+  });
 }
 
 function getExportWebAppUrl() {
@@ -1196,6 +1536,7 @@ async function forceAiRefresh() {
     showUnlockModal();
   }
 })();
+
 </script>
 </body>
 </html>

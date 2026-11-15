@@ -73,6 +73,49 @@ def export_wallet_txs(db_path: Path) -> list[dict]:
     return txs
 
 
+def export_wallet_budgets(db_path: Path) -> list[dict]:
+    """Wallet Manager budget + budgetCategory → dashboard-friendly list."""
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cats = {r["id"]: (r["name"] or "") for r in cur.execute("SELECT id, name FROM category")}
+    skip = {"Month progress bar", "Month progress bar compensation"}
+    out = []
+    try:
+        budgets = cur.execute(
+            "SELECT id, name, amount, spent, status, period, repeat, start_date, end_date, category_id "
+            "FROM budget ORDER BY id"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        conn.close()
+        return []
+    for b in budgets:
+        name = (b["name"] or "").strip()
+        if name in skip or name.lower().startswith("month progress"):
+            continue
+        links = cur.execute(
+            "SELECT category_id FROM budgetCategory WHERE budget_id = ?", (b["id"],)
+        ).fetchall()
+        cat_names = []
+        seen = set()
+        for link in links:
+            cn = cats.get(link["category_id"]) or ""
+            if cn and cn not in skip and cn not in seen:
+                seen.add(cn)
+                cat_names.append(cn)
+        out.append(
+            {
+                "id": b["id"],
+                "name": name or f"Budget {b['id']}",
+                "amount": (b["amount"] or 0) / 100.0,
+                "period": b["period"],
+                "categories": cat_names,
+            }
+        )
+    conn.close()
+    return out
+
+
 def dmy_to_iso(d: str) -> str | None:
     """DD/MM/YYYY → YYYY-MM-DD"""
     try:
@@ -138,16 +181,20 @@ def main() -> None:
         sys.exit(f"Missing wallet DB at {db}")
 
     txs = export_wallet_txs(db)
+    budgets = export_wallet_budgets(db)
     print(f"Wallet txs: {len(txs)} (income {sum(1 for t in txs if t['type']=='Income')})")
+    print(f"Wallet budgets: {len(budgets)}")
 
     balances = load_json(finary_path) or {}
     history = load_json(HIST)
     balances = enrich_balances(balances, history)
+    balances["budgets"] = budgets
 
     snap = {
         "lastSync": datetime.now(timezone.utc).isoformat(),
         "transactions": txs,
         "balances": balances,
+        "budgets": budgets,
         "historyMeta": {
             "hasLivretA": bool(history and history.get("livretA")),
             "hasPeaCash": bool(history and (history.get("pea") or {}).get("cash")),
