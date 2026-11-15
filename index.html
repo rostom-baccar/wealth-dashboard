@@ -659,6 +659,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
     <p class="hint">Not counted in net worth. Used on the Staging tab as expected PEA fuel.</p>
     <label for="modal-gemini">Gemini API key (browser only)</label>
     <input id="modal-gemini" type="password" autocomplete="off" placeholder="AIza…">
+    <p class="hint">Required for the live “How you're doing” check-in under the hero. Without it you only get the offline template.</p>
     <label for="modal-export-url">Apps Script web app URL</label>
     <input id="modal-export-url" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec">
     <p class="hint">Needed for live Refresh. Unlock still loads the encrypted vault without it. After updating WalletExport.gs, redeploy the web app.</p>
@@ -2760,7 +2761,7 @@ function renderAiHtml(text) {
   return parts.map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
 }
 
-function aiCacheKey() { return 'dashboard_ai_checkin_v5'; }
+function aiCacheKey() { return 'dashboard_ai_checkin_v6'; }
 function getAiCache() {
   try { return JSON.parse(localStorage.getItem(aiCacheKey()) || 'null'); } catch { return null; }
 }
@@ -2781,6 +2782,8 @@ function setCheckinStatus(msg, tone = '') {
   el.textContent = msg || '';
   el.dataset.tone = tone || '';
 }
+
+let aiRequestSerial = 0;
 
 function categoryTotals(txs) {
   const map = {};
@@ -2831,18 +2834,26 @@ function buildCheckinDossier(txs) {
 
   const catNow = categoryTotals(month);
   const catPrevMap = Object.fromEntries(categoryTotals(prev).map(c => [c.name, c.amount]));
-  const unusualCats = catNow.map(c => {
-    const prevAmt = catPrevMap[c.name] || 0;
-    const delta = c.amount - prevAmt;
-    const ratio = prevAmt > 0 ? c.amount / prevAmt : (c.amount > 25 ? 99 : 1);
-    return { ...c, prevAmt, delta, ratio };
-  }).filter(c => c.amount >= 25 && (c.ratio >= 1.35 || c.delta >= 50 || !catPrevMap[c.name]))
-    .sort((a, b) => b.delta - a.delta)
-    .slice(0, 10);
 
   const rawBudgets = (STATE.budgets || []).filter(b => b.name && !/month progress/i.test(b.name));
   const budgetedCatSet = new Set();
   rawBudgets.forEach(b => (b.categories || []).forEach(c => budgetedCatSet.add(c)));
+
+  const unusualCats = catNow.map(c => {
+    const prevAmt = catPrevMap[c.name] || 0;
+    const delta = c.amount - prevAmt;
+    const ratio = prevAmt > 0 ? c.amount / prevAmt : (c.amount > 25 ? 99 : 1);
+    const unbudgeted = !budgetedCatSet.has(c.name) || /out of budget/i.test(c.name);
+    return { ...c, prevAmt, delta, ratio, unbudgeted };
+  }).filter(c => {
+    if (c.amount < 25) return false;
+    // Always keep unbudgeted / “Out of budget” once material — MoM can look “normal” while memos tell the story.
+    if (c.unbudgeted && c.amount >= 40) return true;
+    return c.ratio >= 1.35 || c.delta >= 50 || !catPrevMap[c.name];
+  })
+    .sort((a, b) => (Number(b.unbudgeted) - Number(a.unbudgeted)) || (b.delta - a.delta) || (b.amount - a.amount))
+    .slice(0, 12);
+
   const budgetRows = rawBudgets
     .map(b => {
       const cats = b.categories || [];
@@ -2886,7 +2897,24 @@ function buildCheckinDossier(txs) {
   const overBudgetCats = new Set(overBudgetRows.flatMap(b => b.categories || []));
   const overCatchAll = overBudgetRows.some(b => b.catchAll);
 
-  // Memos + over-budget lines matter more than the single largest rent payment.
+  // Categories that never appear on any budget (e.g. Wallet “Out of budget”) — often where life events land.
+  const unbudgetedCats = catNow
+    .filter(c => !budgetedCatSet.has(c.name))
+    .map(c => ({
+      name: c.name,
+      eur: Math.round(c.amount),
+      lastMonthEur: Math.round(catPrevMap[c.name] || 0),
+      txCount: expenses.filter(t => (t.category || 'Other') === c.name).length,
+    }));
+
+  const isUnbudgetedTx = (t) => {
+    const cat = t.category || 'Other';
+    if (!budgetedCatSet.has(cat)) return true;
+    if (/out of budget/i.test(cat)) return true;
+    return false;
+  };
+
+  // Memos + over-budget + unbudgeted lines matter more than the single largest rent payment.
   const memoExpenses = expenses
     .filter(t => (t.memo || '').trim())
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
@@ -2899,6 +2927,14 @@ function buildCheckinDossier(txs) {
     .slice(0, 30)
     .map(mapTxShort);
 
+  const unbudgetedRaw = expenses.filter(isUnbudgetedTx);
+  const unbudgetedSpendTotal = unbudgetedRaw.reduce((s, t) => s + Math.abs(+t.amount || 0), 0);
+  const unbudgetedExpenses = unbudgetedRaw
+    .slice()
+    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+    .slice(0, 35)
+    .map(mapTxShort);
+
   const topExpenses = expenses
     .slice()
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
@@ -2909,14 +2945,31 @@ function buildCheckinDossier(txs) {
   const allExpensesThisMonth = expenses
     .slice()
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
-    .slice(0, 45)
+    .slice(0, 60)
     .map(mapTxShort);
 
-  const recentIncome = month.filter(isIncomeTx)
+  const incomeTxs = month.filter(isIncomeTx);
+  const recentIncome = incomeTxs
     .slice()
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
-    .slice(0, 10)
+    .slice(0, 12)
     .map(mapTxShort);
+
+  const incomeWithMemos = incomeTxs
+    .filter(t => (t.memo || '').trim())
+    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+    .slice(0, 20)
+    .map(mapTxShort);
+
+  // Compact anchors: any labeled money movement the model must not skip.
+  const labeledAnchors = [...expenses, ...incomeTxs]
+    .filter(t => (t.memo || '').trim())
+    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+    .slice(0, 25)
+    .map(t => ({
+      ...mapTxShort(t),
+      direction: isIncomeTx(t) ? 'in' : 'out',
+    }));
 
   const holdings = (STATE.peaAlloc || []).map(h => {
     const value = +h.value || 0, shares = +h.shares || 0, pxCost = +h.costBasis || 0;
@@ -2951,8 +3004,12 @@ function buildCheckinDossier(txs) {
     topExpenses,
     memoExpenses,
     overBudgetExpenses,
+    unbudgetedCats,
+    unbudgetedExpenses,
     allExpensesThisMonth,
     recentIncome,
+    incomeWithMemos,
+    labeledAnchors,
     budgetRows,
     holdings,
     livretWd,
@@ -2961,9 +3018,11 @@ function buildCheckinDossier(txs) {
       wealthDeltaPct: hero && hero.pct != null ? +hero.pct.toFixed(2) : null,
       vs: hero?.baseline?.label || null,
       baselineWhen: hero?.baseline?.when || null,
+      note: 'Hero comparison window may not equal the calendar month; householdNetThisMonthEur is calendar-month wallet flow only.',
       householdNetThisMonthEur: Math.round(saved),
       incomeThisMonthEur: Math.round(inc),
       spendThisMonthEur: Math.round(exp),
+      unbudgetedSpendThisMonthEur: Math.round(unbudgetedSpendTotal),
       residualLikelyMarkToMarketOrOtherEur: residualVsCashflow,
       portfolioMoveLikelyDominatesWealthChange: portfolioLikelyDominant,
       reading: portfolioLikelyDominant
@@ -3004,11 +3063,13 @@ function localCheckinText(ctx) {
     ? ` Most of that move (~**${fmt(Math.abs(decomp.residualLikelyMarkToMarketOrOtherEur || 0))}** after accounting for this month’s **${fmt(decomp.householdNetThisMonthEur)}** household net) looks like PEA/market mark-to-market rather than day-to-day spend.`
     : ` This month’s household net is **${fmt(decomp.householdNetThisMonthEur)}** (**${fmt(ctx.inc)}** in / **${fmt(ctx.exp)}** out).`;
 
-  const memoHits = (ctx.memoExpenses || []).filter(t => t.memo).slice(0, 4);
+  const memoHits = (ctx.labeledAnchors || []).slice(0, 5);
   const over = ctx.budgetRows.filter(b => b.over > 0).slice(0, 3);
-  const lifeBit = (memoHits.length || over.length)
+  const unb = (ctx.unbudgetedCats || []).slice(0, 2);
+  const lifeBit = (memoHits.length || over.length || unb.length)
     ? ` On the personal side, ${[
-        memoHits.length ? `labeled spends include ${memoHits.map(t => `“${t.memo}” (${fmt(t.amount)} · ${t.category})`).join('; ')}` : null,
+        unb.length ? `unbudgeted buckets include ${unb.map(c => `**${c.name}** (${fmt(c.eur)})`).join(', ')}` : null,
+        memoHits.length ? `labeled movements include ${memoHits.map(t => `“${t.memo}” (${fmt(t.amount)} · ${t.category})`).join('; ')}` : null,
         over.length ? `budgets show pressure in ${over.map(b => `**${b.name}** (+${fmt(b.over)})`).join(', ')}` : null,
       ].filter(Boolean).join(', and ')}.`
     : '';
@@ -3042,6 +3103,11 @@ function buildCheckinPrompt(ctx) {
       lastMonthEur: Math.round(c.prevAmt),
       deltaEur: Math.round(c.delta),
     })),
+    // CRITICAL life-event sources (Wallet often parks one-offs here even when MoM totals look “normal”)
+    categoriesNotOnAnyBudget: ctx.unbudgetedCats,
+    unbudgetedOrOutOfBandExpenses: ctx.unbudgetedExpenses,
+    labeledMoneyMovements: ctx.labeledAnchors,
+    incomeWithMemos: ctx.incomeWithMemos,
     expensesWithMemos: ctx.memoExpenses,
     expensesInOverBudgetCategories: ctx.overBudgetExpenses,
     allExpensesThisMonth: ctx.allExpensesThisMonth,
@@ -3069,7 +3135,8 @@ function buildCheckinPrompt(ctx) {
     '- 2 short paragraphs of continuous prose (optional tiny third for the next step). NO bullets, NO numbered lists, NO headings, NO emoji.',
     '- Bold a few key € with **like this**.',
     '- Start from the wealth move he sees. Use wealthDecomposition: if portfolioMoveLikelyDominatesWealthChange is true, lead with mark-to-market / PEA as the main reason for the € change, then layer household life/spend as colour — do NOT pretend Leisure €200 caused a €1500+ NW drop.',
-    '- Read expensesWithMemos, expensesInOverBudgetCategories, allExpensesThisMonth, and budgets[].sampleTx carefully (including catchAll / Misc / out-of-budget buckets). If labels, categories, or budget names point to a life event, say so naturally. Ground every personal claim in those strings — never invent people or events absent from the dossier.',
+    '- LIFE EVENTS: first read labeledMoneyMovements, incomeWithMemos, categoriesNotOnAnyBudget, and unbudgetedOrOutOfBandExpenses. Wallet’s “Out of budget” (and any category on no budget) is where one-offs often sit — even if MoM totals barely changed. Quote concrete memos/categories when they explain the month. Never invent people/events absent from those strings.',
+    '- Also skim expensesWithMemos, budgets[].sampleTx, and allExpensesThisMonth for supporting colour.',
     '- Use Google Search for recent equity/market or major news only when it helps explain a portfolio-dominated move between the baseline date and asOf (' + ctx.today + '). Prefer concrete market colour (indices, mega-cap/tech, rates, elections) over vague vibes. Do not moralize politics.',
     '- Empathize when the month was noisy; reinforce good habits (DCA, Livret floor). End with one concrete next move.',
     '- Not legal/tax advice. PEA net-after-5y = PS 17.2% on gain after five years.',
@@ -3135,7 +3202,6 @@ async function callGeminiCheckin(apiKey, prompt, { withSearch = true, model } = 
 }
 
 async function generateAiSummary(txs, force = false) {
-  if (aiGenerating) return;
   const el = document.getElementById('ai-body');
   if (!el) return;
   const cached = getAiCache();
@@ -3144,25 +3210,31 @@ async function generateAiSummary(txs, force = false) {
     setCheckinStatus('Cached live check-in · tap Refresh check-in for a new read', 'ok');
     return;
   }
+
+  const reqId = ++aiRequestSerial;
   aiGenerating = true;
   const btn = document.getElementById('ai-refresh-btn');
   if (btn) { btn.textContent = 'Refreshing…'; btn.disabled = true; }
   el.innerHTML = `<span class="ai-loading">Reading your numbers + recent context…</span>`;
   setCheckinStatus('Calling Gemini…', 'warn');
 
+  const stillCurrent = () => reqId === aiRequestSerial;
   const ctx = buildCheckinDossier(txs);
   const local = localCheckinText(ctx);
   const apiKey = (localStorage.getItem(LS_GEMINI) || '').trim();
 
   const finishLocal = (why) => {
+    if (!stillCurrent()) return;
     el.innerHTML = renderAiHtml(local);
     setCheckinStatus(why || 'Offline template — add a Gemini API key in Settings for the real check-in', 'bad');
   };
 
   if (!apiKey) {
     finishLocal('No Gemini API key in Settings — showing offline template only');
-    aiGenerating = false;
-    if (btn) { btn.textContent = 'Refresh check-in'; btn.disabled = false; }
+    if (stillCurrent()) {
+      aiGenerating = false;
+      if (btn) { btn.textContent = 'Refresh check-in'; btn.disabled = false; }
+    }
     return;
   }
 
@@ -3174,6 +3246,7 @@ async function generateAiSummary(txs, force = false) {
     // Prefer grounded search; fall back across models, then plain generation.
     outer: for (const withSearch of [true, false]) {
       for (const model of GEMINI_CHECKIN_MODELS) {
+        if (!stillCurrent()) return;
         try {
           result = await callGeminiCheckin(apiKey, prompt, { withSearch, model });
           break outer;
@@ -3183,7 +3256,11 @@ async function generateAiSummary(txs, force = false) {
         }
       }
     }
+    if (!stillCurrent()) return;
     if (!result) throw new Error(errors.slice(0, 3).join(' · ') || 'all attempts failed');
+    if (/offline fallback|Gemini didn’t run|Gemini didn't run/i.test(result.text)) {
+      throw new Error('model returned offline-template-like text');
+    }
 
     el.innerHTML = renderAiHtml(result.text);
     setAiCache(result.text, { source: 'ai' });
@@ -3197,8 +3274,10 @@ async function generateAiSummary(txs, force = false) {
     console.warn('Gemini check-in failed:', e.message, errors);
     finishLocal('AI failed (' + (e.message || 'error') + ') — offline template below. Check key/quota in Settings.');
   }
-  aiGenerating = false;
-  if (btn) { btn.textContent = 'Refresh check-in'; btn.disabled = false; }
+  if (stillCurrent()) {
+    aiGenerating = false;
+    if (btn) { btn.textContent = 'Refresh check-in'; btn.disabled = false; }
+  }
 }
 
 async function forceAiRefresh() {
