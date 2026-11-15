@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "hooks": {
+    "afterFileEdit": [
+      {
+        "command": ".cursor/hooks/mark-audit-needed.sh"
+      }
+    ],
+    "stop": [
+      {
+        "command": ".cursor/hooks/audit-on-stop.sh",
+        "loop_limit": 5
+      }
+    ]
+  }
+}

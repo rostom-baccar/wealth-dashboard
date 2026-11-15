@@ -998,16 +998,47 @@ function loadBalancesFromStorage() {
 }
 
 let lastLedgerFingerprint = null;
+/** Fingerprint raw snapshot JSON (pre-STATE) — used to detect wallet refresh changes. */
 function ledgerFingerprint(data) {
   const txs = data?.transactions || [];
   let sum = 0;
   for (let i = 0; i < Math.min(txs.length, 40); i++) sum += Math.abs(+txs[i].amount || 0);
+  const tip = txs[0]
+    ? String(txs[0].date || '') + ':' + Math.round(+txs[0].amount || 0)
+    : '';
   return [
     data.lastSync || data.servedAt || '',
     txs.length,
     Math.round(sum),
+    tip,
     (data.budgets || []).length,
   ].join(':');
+}
+
+/**
+ * Fingerprint of everything the check-in is allowed to talk about.
+ * Cache entries without a matching fp are treated as misses (fixes stale AI across unlocks).
+ */
+function checkinDataFingerprint() {
+  const txs = STATE.transactions || [];
+  let sum = 0;
+  for (let i = 0; i < Math.min(txs.length, 40); i++) sum += Math.abs(+txs[i].amount || 0);
+  const tip = txs[0]
+    ? localDayStr(txs[0].date) + ':' + Math.round(+txs[0].amount || 0)
+    : '';
+  return [
+    STATE.lastSnapshotSync || '',
+    txs.length,
+    Math.round(sum),
+    tip,
+    (STATE.budgets || []).length,
+    Math.round(STATE.pea || 0),
+    Math.round(STATE.livretA || 0),
+    Math.round(STATE.pee || 0),
+    STATE.checking != null ? Math.round(STATE.checking) : 'x',
+    STATE.boursoLdds != null ? Math.round(STATE.boursoLdds) : 'x',
+    heroVsMode || '',
+  ].join('|');
 }
 
 function applySnapshotData(data) {
@@ -1183,6 +1214,7 @@ function saveBalancesFromModal() {
   const gemini = (document.getElementById('modal-gemini')?.value || '').trim();
   const exportUrl = (document.getElementById('modal-export-url')?.value || '').trim();
   const prevGemini = (localStorage.getItem(LS_GEMINI) || '').trim();
+  const prevFp = checkinDataFingerprint();
   if (gemini !== prevGemini) clearAiCache();
   if (gemini) localStorage.setItem(LS_GEMINI, gemini);
   else localStorage.removeItem(LS_GEMINI);
@@ -1194,6 +1226,10 @@ function saveBalancesFromModal() {
   persistBalancesState();
   hideBalanceModal();
   renderAll(STATE.transactions);
+  // Balances/settings feed the check-in — refresh when the fingerprint moved (or key changed).
+  if (gemini !== prevGemini || checkinDataFingerprint() !== prevFp) {
+    generateAiSummary(STATE.transactions, true).catch(() => {});
+  }
 }
 
 function netWorth() {
@@ -1510,6 +1546,9 @@ function onHeroVsChange() {
   heroVsMode = sel.value || '1m';
   localStorage.setItem('dashboard_hero_vs', heroVsMode);
   renderHero();
+  // Hero comparison window is part of the check-in dossier — drop stale cache and nudge refresh.
+  clearAiCache();
+  setCheckinStatus('Comparison window changed — tap Refresh check-in for an updated read', 'warn');
 }
 
 function setTabBoost(id, boost) {
@@ -2817,9 +2856,18 @@ function renderAiHtml(text) {
   return parts.map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
 }
 
-function aiCacheKey() { return 'dashboard_ai_checkin_v10'; }
+function aiCacheKey() { return 'dashboard_ai_checkin_v11'; }
 function getAiCache() {
-  try { return JSON.parse(localStorage.getItem(aiCacheKey()) || 'null'); } catch { return null; }
+  try {
+    const cached = JSON.parse(localStorage.getItem(aiCacheKey()) || 'null');
+    if (!cached || !cached.text || cached.source !== 'ai') return null;
+    // Reject cache written against a different ledger/balances/hero-vs window.
+    if (!cached.fp || cached.fp !== checkinDataFingerprint()) {
+      clearAiCache();
+      return null;
+    }
+    return cached;
+  } catch { return null; }
 }
 function setAiCache(text, meta = {}) {
   // Only persist successful live AI — never cache the offline template as a “brief”.
@@ -2829,6 +2877,7 @@ function setAiCache(text, meta = {}) {
       text,
       at: Date.now(),
       source: 'ai',
+      fp: checkinDataFingerprint(),
     }));
   } catch {}
 }
@@ -3304,7 +3353,7 @@ async function generateAiSummary(txs, force = false) {
   const el = document.getElementById('ai-body');
   if (!el) return;
   const cached = getAiCache();
-  if (!force && cached && cached.text && cached.source === 'ai' && (Date.now() - cached.at) < 86400000) {
+  if (!force && cached && (Date.now() - cached.at) < 86400000) {
     el.innerHTML = renderAiHtml(cached.text);
     setCheckinStatus('Cached live check-in · tap Refresh check-in for a new read', 'ok');
     return;

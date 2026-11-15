@@ -1,0 +1,18 @@
+---
+description: After any change, run the self-audit loop until clean — do not wait to be asked for another pass
+alwaysApply: true
+---
+
+# Self-audit until clean
+
+Do **not** wait for the user to say “do another pass” or “since you found bugs”.
+
+Whenever you change this project (especially `index.html`, `WalletExport.gs`, or the AI check-in path):
+
+1. Implement the requested change fully.
+2. Run `node scripts/audit-checkin.mjs`.
+3. If it fails **or** you noticed a related bug while fixing: fix it, re-run the audit, repeat.
+4. Stop the loop only when the audit exits 0 **and** a focused re-read of the touched paths finds no further concrete bugs.
+5. Then commit + push (per always-push rule).
+
+Treat every hardening/fix session as a closed loop. Finding a bug mid-pass means another pass is mandatory, not optional.

@@ -6,6 +6,9 @@ data/wallet-snapshot.json
 *.pem
 .DS_Store
 
+# Agent self-audit scratch flag (stop hook)
+.cursor/audit-needed
+
 data/private/
 data/history.json
 
