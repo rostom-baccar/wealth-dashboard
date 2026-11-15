@@ -1674,7 +1674,10 @@ function drawPeaProjection() {
     points: projectPea(years, rate / 100, monthly),
     selected: Math.abs(rate - selected) < 0.05,
   }));
-  const labels = seriesByRate[0].points.map(p => p.year === 0 ? 'Now' : '+' + p.year + 'y');
+  const baseYear = new Date().getFullYear();
+  const labels = seriesByRate[0].points.map(p =>
+    p.year === 0 ? `Now · ${baseYear}` : `${baseYear + p.year}`
+  );
   const datasets = [];
 
   seriesByRate.forEach((s, i) => {
