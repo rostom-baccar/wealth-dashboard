@@ -236,16 +236,38 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .feed-amt{font-family:var(--mono);font-weight:600;white-space:nowrap}
 .feed-amt.inc{color:var(--ok)}.feed-amt.exp{color:var(--text)}
 .ai-brief{
-  margin:-8px 0 36px;padding:18px 18px;position:relative;border-radius:var(--radius);
+  margin:0;padding:18px 18px;position:relative;border-radius:var(--radius);
   background:rgba(16,28,44,0.72);border:1px solid var(--line);
   box-shadow:var(--shadow);font-size:13px;line-height:1.65;color:var(--muted);
 }
-.ai-brief .ai-tag{
-  position:absolute;top:14px;right:40px;font-size:10px;letter-spacing:.12em;
+.doing-ai-head{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
+  margin-bottom:12px;
+}
+.doing-ai-head .ai-tag{
+  position:static;font-size:10px;letter-spacing:.12em;
   text-transform:uppercase;color:var(--gold);font-weight:700;
 }
-.ai-brief .ai-refresh{position:absolute;top:10px;right:10px;border:0;background:none;color:var(--muted);cursor:pointer;font-size:14px;padding:4px}
+.doing-ai-head .btn{padding:8px 12px;font-size:11px}
+.doing-ai-head .btn:disabled{opacity:.55;cursor:wait}
 .ai-brief b{color:var(--text)}.ai-brief ul{margin:8px 0 0 18px}.ai-loading{font-style:italic}
+.doing-pulse{
+  display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px;
+}
+.doing-chip{
+  padding:10px 12px;border-radius:10px;border:1px solid var(--line);
+  background:rgba(7,13,22,0.35);min-width:140px;flex:1 1 140px;
+}
+.doing-chip span{
+  display:block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;
+}
+.doing-chip strong{
+  display:block;margin-top:6px;font-family:var(--mono);font-size:16px;font-weight:600;color:var(--text);
+}
+.doing-chip.up strong{color:var(--ok)}
+.doing-chip.down strong{color:var(--bad)}
+.doing-chip em{display:block;margin-top:4px;font-style:normal;font-size:11px;color:var(--muted)}
 .chart-wrap{
   position:relative;height:300px;width:100%;margin-bottom:12px;border-radius:var(--radius);
   background:rgba(16,28,44,0.72);border:1px solid var(--line);padding:16px 12px 10px;box-shadow:var(--shadow);
@@ -362,17 +384,17 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
     <div class="topbar-meta" id="sync-time">Loading…</div>
     <div class="top-actions">
       <label class="tog-wrap" title="Hide amounts">
-        <span id="anon-lbl">Anon</span>
+      <span id="anon-lbl">Anon</span>
         <span class="tog"><input type="checkbox" id="tog-anon" onchange="onAnonToggle()"><span class="tog-sl"></span></span>
-      </label>
+    </label>
       <button class="btn" type="button" onclick="showBalanceModal()">Settings</button>
       <button class="btn" type="button" onclick="lockVault()">Lock</button>
       <button class="btn btn-primary" type="button" id="refresh-btn" onclick="refreshAll()">
         <span id="refresh-icon">↻</span> Refresh
-      </button>
-    </div>
+    </button>
   </div>
-  <div class="status-row" id="status-bar"></div>
+</div>
+<div class="status-row" id="status-bar"></div>
 
   <section class="hero" aria-label="Net worth">
     <div class="hero-atmosphere" aria-hidden="true"></div>
@@ -389,7 +411,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
           <option value="check">vs last check</option>
         </select>
       </label>
-    </div>
+</div>
     <div class="hero-split" id="hero-split"></div>
     <div class="hero-cta">
       <button class="btn btn-primary" type="button" onclick="refreshAll()">Refresh live data</button>
@@ -408,11 +430,11 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
     <div class="section-head">
       <h2>Total wealth</h2>
       <p>Overall net worth — existing trail and a forward playground. Switch panes instead of stacking charts.</p>
-    </div>
+  </div>
     <div class="chart-pane-tabs" role="tablist" aria-label="Wealth chart view">
       <button type="button" class="on" data-pane-for="wealth" data-pane="existing" onclick="setChartPane('wealth','existing')">Existing</button>
       <button type="button" data-pane-for="wealth" data-pane="future" onclick="setChartPane('wealth','future')">Future</button>
-    </div>
+</div>
     <div class="chart-pane on" data-chart-pane="wealth" data-pane="existing">
       <div class="range-row" role="group" aria-label="Wealth chart range"><button type="button" data-range="1M" onclick="setChartRange('1M')">1M</button><button type="button" data-range="3M" onclick="setChartRange('3M')">3M</button><button type="button" data-range="1Y" onclick="setChartRange('1Y')">1Y</button><button type="button" data-range="3Y" onclick="setChartRange('3Y')">3Y</button><button type="button" data-range="5Y" onclick="setChartRange('5Y')">5Y</button><button type="button" data-range="Max" onclick="setChartRange('Max')">Max</button></div>
       <div class="chart-style-bar" data-chart-style="nwHist">
@@ -421,7 +443,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
           <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
           <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('nwHist')">
         </label>
-      </div>
+    </div>
       <div class="chart-wrap"><canvas id="nwHistChart"></canvas></div>
       <p class="traj-note" id="nw-hist-note"></p>
     </div>
@@ -439,7 +461,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
           <span>Growth (selected) <strong data-proj-rate-val>7%</strong></span>
           <input type="range" data-proj-rate min="0" max="15" step="0.5" value="7" oninput="onProjControlsChange()">
         </label>
-      </div>
+  </div>
       <div class="chart-style-bar" data-chart-style="nwProj">
         <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('nwProj')"> Discrete</label>
         <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
@@ -449,19 +471,19 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
       </div>
       <div class="chart-wrap"><canvas id="nwProjChart"></canvas></div>
       <p class="traj-note" id="nw-proj-note"></p>
-    </div>
+</div>
 
     <div class="section-head" style="margin-top:28px">
       <h2>How you're doing</h2>
-      <p>Frequent check-ins: growth, expected PEA, and what you saved.</p>
+      <p>A short pulse, then an AI check-in — refresh that separately from wallet data.</p>
     </div>
-    <p id="overview-pea-gain" class="traj-note"></p>
-    <div class="boost-grid" id="overview-boosts"></div>
-    <p class="money-rule" id="money-rule"></p>
-    <div class="ai-brief" id="ai-box" style="margin-top:22px">
-      <span class="ai-tag">Brief</span>
-      <button type="button" class="ai-refresh" id="ai-refresh-btn" onclick="forceAiRefresh()" title="Regenerate">↻</button>
-      <div id="ai-body"><span class="ai-loading">…</span></div>
+    <div class="doing-pulse" id="overview-pulse"></div>
+    <div class="ai-brief" id="ai-box">
+      <div class="doing-ai-head">
+        <span class="ai-tag">AI check-in</span>
+        <button type="button" class="btn" id="ai-refresh-btn" onclick="forceAiRefresh()">Refresh check-in</button>
+      </div>
+      <div id="ai-body"><span class="ai-loading">Unlock to load your check-in…</span></div>
     </div>
   </section>
 
@@ -476,25 +498,25 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
         <div class="stat-pair">
           <div class="stat"><div class="stat-lbl">Income</div><div class="stat-val pos blur-val" id="stat-inc">—</div></div>
           <div class="stat"><div class="stat-lbl">Spent</div><div class="stat-val blur-val" id="stat-exp">—</div></div>
-        </div>
+  </div>
         <div class="stat"><div class="stat-lbl">Net</div><div class="stat-val blur-val" id="stat-net">—</div></div>
         <div id="inc-breakdown" class="inc-breakdown" style="margin-top:14px"></div>
         <div class="section-head" style="margin:22px 0 8px"><h2 style="font-size:18px">Budgets</h2><p>From Wallet Manager · vs actual this month</p></div>
         <div id="budget-list"></div>
         <div id="cat-bars" style="margin-top:18px"></div>
-      </div>
+</div>
       <div>
         <div class="section-head" style="margin-bottom:8px"><h2 style="font-size:20px">Latest</h2><p id="feed-count"></p></div>
         <div class="feed" id="expense-list"></div>
-      </div>
     </div>
+  </div>
   </section>
 
   <section class="tab-panel" id="panel-pea">
     <div class="section-head">
       <h2>PEA</h2>
       <p>Per-fund performance, then Existing funding history or Future projections — one chart at a time.</p>
-    </div>
+</div>
     <div id="pea-tab-boost" class="tab-boost" style="display:none"></div>
     <div id="pea-holdings" style="margin-bottom:18px"></div>
 
@@ -531,12 +553,12 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
           <span>Growth (selected) <strong data-proj-rate-val>7%</strong></span>
           <input type="range" data-proj-rate min="0" max="15" step="0.5" value="7" oninput="onProjControlsChange()">
         </label>
-      </div>
+  </div>
       <div class="traj-toggle" role="group" aria-label="Projection view">
         <button type="button" class="on" id="tog-gross" onclick="setProjMode('gross')">Gross</button>
         <button type="button" id="tog-net" onclick="setProjMode('net')">Net after 5y</button>
         <button type="button" id="tog-both" onclick="setProjMode('both')">Both</button>
-      </div>
+</div>
       <div class="chart-style-bar" data-chart-style="peaProj">
         <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('peaProj')"> Discrete</label>
         <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
@@ -563,7 +585,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
     <div class="chart-pane-tabs" role="tablist" aria-label="Livret chart view" style="margin-top:14px">
       <button type="button" class="on" data-pane-for="livret" data-pane="existing" onclick="setChartPane('livret','existing')">Existing</button>
       <button type="button" data-pane-for="livret" data-pane="future" onclick="setChartPane('livret','future')">Future</button>
-    </div>
+  </div>
     <div class="chart-pane on" data-chart-pane="livret" data-pane="existing">
       <div class="range-row" role="group" aria-label="Chart range"><button type="button" data-range="1M" onclick="setChartRange('1M')">1M</button><button type="button" data-range="3M" onclick="setChartRange('3M')">3M</button><button type="button" data-range="1Y" onclick="setChartRange('1Y')">1Y</button><button type="button" data-range="3Y" onclick="setChartRange('3Y')">3Y</button><button type="button" data-range="5Y" onclick="setChartRange('5Y')">5Y</button><button type="button" data-range="Max" onclick="setChartRange('Max')">Max</button></div>
       <div class="chart-style-bar" data-chart-style="livret">
@@ -572,7 +594,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
           <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
           <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('livret')">
         </label>
-      </div>
+</div>
       <div class="chart-wrap"><canvas id="livretChart"></canvas></div>
       <div class="section-head" style="margin-top:22px"><h2 style="font-size:18px">Recent withdrawals</h2><p>Drops between statement balances</p></div>
       <div class="feed" id="livret-withdrawals"></div>
@@ -584,17 +606,17 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
           <span>Horizon <strong data-proj-years-val>10y</strong></span>
           <input type="range" data-proj-years min="1" max="30" step="1" value="10" oninput="onProjControlsChange()">
         </label>
-      </div>
+  </div>
       <div class="chart-style-bar" data-chart-style="livretProj">
         <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('livretProj')"> Discrete</label>
         <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
           <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
           <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('livretProj')">
         </label>
-      </div>
+    </div>
       <div class="chart-wrap"><canvas id="livretProjChart"></canvas></div>
       <p class="traj-note" id="livret-proj-note"></p>
-    </div>
+  </div>
   </section>
 
   <section class="tab-panel" id="panel-staging">
@@ -605,7 +627,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
     <div id="staging-tab-boost" class="tab-boost" style="display:none"></div>
     <div id="staging-body"></div>
   </section>
-</div>
+    </div>
 
 <div id="modal-overlay" class="modal-overlay">
   <div class="modal"><div class="modal-pad">
@@ -626,7 +648,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
     <div class="modal-actions">
       <button type="button" class="btn btn-primary" onclick="saveBalancesFromModal()">Save</button>
       <button type="button" class="btn" onclick="hideBalanceModal()">Cancel</button>
-    </div>
+  </div>
   </div></div>
 </div>
 
@@ -900,13 +922,13 @@ function derivePeaMonthlyFromFinary() {
 
 function applyBalancesPayload(b, { persist = true } = {}) {
   if (!b || typeof b !== 'object') return false;
-  if (b.pea != null) STATE.pea = +b.pea;
-  if (b.livretA != null) STATE.livretA = +b.livretA;
-  if (b.pee != null) STATE.pee = +b.pee;
+    if (b.pea != null) STATE.pea = +b.pea;
+    if (b.livretA != null) STATE.livretA = +b.livretA;
+    if (b.pee != null) STATE.pee = +b.pee;
   if (b.checking != null) STATE.checking = +b.checking;
   if (b.boursoLdds != null) STATE.boursoLdds = +b.boursoLdds;
-  if (b.costBasis != null) STATE.monthlyCostBasis = +b.costBasis;
-  if (b.monthlyNetIncome != null) STATE.monthlyNetIncome = +b.monthlyNetIncome;
+    if (b.costBasis != null) STATE.monthlyCostBasis = +b.costBasis;
+    if (b.monthlyNetIncome != null) STATE.monthlyNetIncome = +b.monthlyNetIncome;
   if (Array.isArray(b.peaAlloc) && b.peaAlloc.length) STATE.peaAlloc = b.peaAlloc;
   if (b.peaMonthsActive != null) STATE.peaMonthsActive = +b.peaMonthsActive;
   if (b.peaStartedAt) STATE.peaStartedAt = b.peaStartedAt;
@@ -932,11 +954,11 @@ function loadBalancesFromStorage() {
 function applySnapshotData(data) {
   if (!data || !Array.isArray(data.transactions)) throw new Error('Invalid snapshot JSON');
   STATE.transactions = data.transactions.map(t => ({
-    date: new Date(t.date), type: t.type, category: t.category,
-    amount: parseFloat(t.amount), memo: t.memo || '',
-  })).filter(t => !isNaN(t.date) && !isNaN(t.amount))
-    .sort((a, b) => b.date - a.date);
-  STATE.driveOk = true;
+      date: new Date(t.date), type: t.type, category: t.category,
+      amount: parseFloat(t.amount), memo: t.memo || '',
+    })).filter(t => !isNaN(t.date) && !isNaN(t.amount))
+      .sort((a, b) => b.date - a.date);
+    STATE.driveOk = true;
   STATE.lastSnapshotSync = data.lastSync || data.servedAt || null;
   if (data.balances) applyBalancesPayload(data.balances);
   if (Array.isArray(data.budgets) && data.budgets.length) {
@@ -1677,42 +1699,39 @@ function expectedPeaThisMonth(txs) {
   return { expectedToPea, projectedSpend, leftoverIfPace, stagingTarget, exp, inc, day, daysInMonth };
 }
 function renderOverviewBoosts(txs) {
-  const el = document.getElementById('overview-boosts');
+  const el = document.getElementById('overview-pulse');
   if (!el) return;
   const boosts = computeBoosts(txs);
-  const tax = peaNetAfter5y(STATE.pea, STATE.monthlyCostBasis);
   const exp = expectedPeaThisMonth(txs);
-  const cards = boosts.overview.map(c => ({ ...c }));
-  cards.unshift({
-    lbl: 'Expected PEA (pace)',
-    val: fmt(exp.expectedToPea),
-    sub: `if spend pace holds · pot ~${fmt(exp.stagingTarget)}`,
-    dir: 'up',
-  });
+  const chips = [];
+
   if (boosts.hero && !boosts.hero.pending) {
     const base = boosts.hero.baseline;
-    const vsLbl = base
-      ? `vs ${base.label}${base.when ? ' · ' + base.when : ''}`
-      : 'vs selected period';
-    cards.unshift({
-      lbl: 'Net worth change',
+    chips.push({
+      lbl: 'Wealth',
       val: fmtDelta(boosts.hero.amount, boosts.hero.pct),
-      sub: vsLbl,
+      sub: base ? `vs ${base.label}${base.when ? ' · ' + base.when : ''}` : 'vs selected period',
       dir: boosts.hero.dir,
     });
   }
-  el.innerHTML = cards.map(c =>
-    `<div class="boost-card"><span>${c.lbl}</span><strong class="blur-val ${c.dir === 'up' ? 'pos' : (c.dir === 'down' ? 'neg' : '')}">${c.val}</strong><em>${c.sub}</em></div>`
-  ).join('');
-  const rule = document.getElementById('money-rule');
-  if (rule) rule.textContent = 'EOM: remaining Bourso LDDS staging → PEA; top Livret only if under €8k. LCL LDDS stays off this dashboard (known spends / IOUs).';
-  const gainEl = document.getElementById('overview-pea-gain');
-  if (gainEl) {
-    const peaBoost = boosts.pea;
-    gainEl.innerHTML = peaBoost
-      ? `<span class="${peaBoost.dir}">PEA <strong class="blur-val">${fmtDelta(peaBoost.amount, peaBoost.pct)}</strong> vs capital invested · ~<strong class="blur-val">${fmt(tax.net)}</strong> net after 5y</span>`
-      : `PEA · ~<strong class="blur-val">${fmt(tax.net)}</strong> net after 5y`;
+  if (boosts.spend) {
+    chips.push({
+      lbl: 'This month',
+      val: boosts.spend.short.replace(/^Saved /, '').replace(/^This month /, '') || boosts.spend.text,
+      sub: boosts.spend.vs === 'last month' ? 'saved vs last month' : 'net so far',
+      dir: boosts.spend.dir,
+    });
   }
+  chips.push({
+    lbl: 'PEA if pace holds',
+    val: fmt(exp.expectedToPea),
+    sub: `toward ~${fmt(exp.stagingTarget)} pot`,
+    dir: exp.expectedToPea > 0 ? 'up' : 'flat',
+  });
+
+  el.innerHTML = chips.slice(0, 3).map(c =>
+    `<div class="doing-chip ${c.dir || 'flat'}"><span>${c.lbl}</span><strong class="blur-val">${c.val}</strong><em>${c.sub}</em></div>`
+  ).join('');
 }
 function renderBudgets(txs) {
   const el = document.getElementById('budget-list');
@@ -2692,8 +2711,8 @@ async function refreshAll() {
     applySnapshotData(data);
     STATE.snapshotSource = 'apps-script-live';
     STATE.driveOk = true;
-    await fetchSavings();
-    renderAll(STATE.transactions);
+  await fetchSavings();
+  renderAll(STATE.transactions);
     // Snapshot NW after a successful Refresh so the next visit can show “up by X% vs last check”
     commitNwCheckpoint(netWorth(), true);
     const nBud = (STATE.budgets || []).length;
@@ -2704,7 +2723,6 @@ async function refreshAll() {
       nBud ? `<span class="pill pill-ok">${nBud} budgets</span>` : `<span class="pill pill-err">0 budgets</span>`,
       `<span class="pill">${STATE.transactions.length} tx</span>`,
     ].join('');
-    generateAiSummary(STATE.transactions, true).catch(() => {});
   } catch (e) {
     const msg = e.message || String(e);
     console.warn('Live refresh failed:', msg);
@@ -2723,7 +2741,7 @@ function renderAiHtml(text) {
     .replace(/\n/g, '<br>');
 }
 
-function aiCacheKey() { return 'dashboard_ai_brief_v2'; }
+function aiCacheKey() { return 'dashboard_ai_checkin_v1'; }
 function getAiCache() {
   try { return JSON.parse(localStorage.getItem(aiCacheKey()) || 'null'); } catch { return null; }
 }
@@ -2731,46 +2749,87 @@ function setAiCache(text) {
   try { localStorage.setItem(aiCacheKey(), JSON.stringify({ text, at: Date.now() })); } catch {}
 }
 
-async function generateAiSummary(txs, force = false) {
-  if (aiGenerating) return;
-  const el = document.getElementById('ai-body');
-  if (!el) return;
-  const cached = getAiCache();
-  if (!force && cached && (Date.now() - cached.at) < 86400000) {
-    el.innerHTML = renderAiHtml(cached.text);
-    return;
-  }
-  aiGenerating = true;
-  const btn = document.getElementById('ai-refresh-btn');
-  if (btn) { btn.textContent = '…'; btn.disabled = true; }
-  el.innerHTML = `<span class="ai-loading">Generating brief…</span>`;
-
+function buildCheckinContext(txs) {
   const tax = peaNetAfter5y(STATE.pea, STATE.monthlyCostBasis);
   const heldYrs = yearsHeld(STATE.peaStartedAt);
   const month = monthBucket(txs || []);
   const exp = month.filter(isExpenseTx).reduce((s, t) => s + Math.abs(t.amount), 0);
   const inc = month.filter(isIncomeTx).reduce((s, t) => s + Math.abs(+t.amount || 0), 0);
-  const local = `**${fmt(netWorth())} net — PEA ${fmt(STATE.pea)} (~${fmt(tax.net)} after 5y)**\n- Gain ${fmt(tax.gain)} · PS 17.2% after 5y · ${heldYrs.toFixed(1)}y held so far\n- This month: income ${fmt(inc)} / spend ${fmt(exp)}\n- Livret A ${fmt(STATE.livretA)} · PEE ${fmt(STATE.pee || 0)}\n- **Today:** keep the ~${fmt(STATE.peaMonthly || 700)} PEA DCA and watch spend pace vs income`;
-  const apiKey = (localStorage.getItem(LS_GEMINI) || '').trim();
+  const pace = expectedPeaThisMonth(txs || []);
+  const boosts = computeBoosts(txs || []);
+  const hero = boosts.hero && !boosts.hero.pending ? boosts.hero : null;
+  const livretGap = Math.max(0, LIVRET_TARGET - (STATE.livretA || 0));
+  return { tax, heldYrs, exp, inc, pace, hero, livretGap, boosts };
+}
 
+function localCheckinText(ctx) {
+  const nw = netWorth();
+  const heroLine = ctx.hero
+    ? `Wealth ${fmtDelta(ctx.hero.amount, ctx.hero.pct)} vs ${ctx.hero.baseline?.label || 'prior'}.`
+    : 'Wealth baseline still filling in.';
+  const mood = ctx.hero
+    ? (ctx.hero.amount > 0 ? 'On track' : (ctx.hero.amount < 0 ? 'Soft patch' : 'Flat for now'))
+    : 'Getting oriented';
+  return (
+    `**${mood} — ${fmt(nw)} net worth**\n` +
+    `- ${heroLine}\n` +
+    `- This month: **${fmt(inc)}** in / **${fmt(exp)}** out` +
+    (ctx.boosts.spend ? ` · ${ctx.boosts.spend.short}` : '') + `\n` +
+    `- PEA **${fmt(STATE.pea)}** (~${fmt(ctx.tax.net)} after 5y) · Livret **${fmt(STATE.livretA)}**` +
+    (ctx.livretGap > 0 ? ` (${fmt(ctx.livretGap)} to €8k floor)` : ' (≥ €8k floor)') + `\n` +
+    `- **Next:** keep ~${fmt(STATE.peaMonthly || 700)}/mo PEA; EOM staging → PEA` +
+    (ctx.livretGap > 0 ? ' after topping Livret' : '') + '.'
+  );
+}
+
+async function generateAiSummary(txs, force = false) {
+  if (aiGenerating) return;
+  const el = document.getElementById('ai-body');
+  if (!el) return;
+  const cached = getAiCache();
+  if (!force && cached && cached.text && (Date.now() - cached.at) < 86400000) {
+    el.innerHTML = renderAiHtml(cached.text);
+    return;
+  }
+  aiGenerating = true;
+  const btn = document.getElementById('ai-refresh-btn');
+  if (btn) { btn.textContent = 'Refreshing…'; btn.disabled = true; }
+  el.innerHTML = `<span class="ai-loading">Writing your check-in…</span>`;
+
+  const ctx = buildCheckinContext(txs);
+  const local = localCheckinText(ctx);
+  const apiKey = (localStorage.getItem(LS_GEMINI) || '').trim();
   const finishLocal = () => { el.innerHTML = renderAiHtml(local); setAiCache(local); };
 
   if (!apiKey) {
     finishLocal();
     aiGenerating = false;
-    if (btn) { btn.textContent = '↻'; btn.disabled = false; }
+    if (btn) { btn.textContent = 'Refresh check-in'; btn.disabled = false; }
     return;
   }
 
   try {
-    const prompt = `Short personal-finance brief for Rostom. English, punchy. Bold key €. 1 headline + 4 bullets + one Today's action. PEA net figures are after the 5-year mark (PS 17.2% on gain), not early withdrawal.\nNW ${netWorth()} PEA ${STATE.pea} cost ${STATE.monthlyCostBasis} netPEA_after5y ${tax.net} livret ${STATE.livretA} pee ${STATE.pee} monthInc ${inc} monthExp ${exp} peaMo ${STATE.peaMonthly}`;
+    const heroBits = ctx.hero
+      ? `wealthDelta ${ctx.hero.amount} wealthPct ${ctx.hero.pct} vs ${ctx.hero.baseline?.label || ''} ${ctx.hero.baseline?.when || ''}`
+      : 'wealthDelta unknown';
+    const prompt = [
+      'Personal check-in for Rostom. English, warm but direct, no fluff.',
+      'Structure: 1 short verdict headline (bold key €), then 3 short bullets on recent performance, then 1 concrete Next move.',
+      'Focus on overall wealth, spend pace this month, PEA DCA, Livret €8k floor. Not legal/tax advice.',
+      'PEA net figures assume withdrawal after 5 years (PS 17.2% on gain).',
+      `NW ${netWorth()} PEA ${STATE.pea} cost ${STATE.monthlyCostBasis} netPEA_after5y ${ctx.tax.net} heldY ${ctx.heldYrs.toFixed(1)}`,
+      `livret ${STATE.livretA} livretGapTo8k ${ctx.livretGap} pee ${STATE.pee || 0}`,
+      `monthInc ${ctx.inc} monthExp ${ctx.exp} peaMo ${STATE.peaMonthly || 700} expectedPeaPace ${ctx.pace.expectedToPea}`,
+      heroBits,
+      `staging ${STATE.boursoLdds != null ? STATE.boursoLdds : 'unknown'}`,
+    ].join('\n');
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.55, maxOutputTokens: 500 },
+        generationConfig: { temperature: 0.5, maxOutputTokens: 420 },
       }),
     });
     if (!res.ok) throw new Error('Gemini HTTP ' + res.status);
@@ -2780,11 +2839,11 @@ async function generateAiSummary(txs, force = false) {
     el.innerHTML = renderAiHtml(text.trim());
     setAiCache(text.trim());
   } catch (e) {
-    console.warn('Gemini failed:', e.message);
+    console.warn('Gemini check-in failed:', e.message);
     finishLocal();
   }
   aiGenerating = false;
-  if (btn) { btn.textContent = '↻'; btn.disabled = false; }
+  if (btn) { btn.textContent = 'Refresh check-in'; btn.disabled = false; }
 }
 
 async function forceAiRefresh() {
