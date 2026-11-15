@@ -326,6 +326,18 @@ body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
 .proj-slider span{font-size:12px;color:var(--muted);font-weight:500}
 .proj-slider strong{color:var(--gold);font-family:var(--mono);font-weight:600}
 .proj-slider input[type=range]{width:100%;accent-color:var(--aegean)}
+.chart-style-bar{
+  display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:0 0 16px;
+  padding:8px 10px;border:1px solid var(--line);border-radius:12px;
+  background:rgba(16,28,44,.45);
+}
+.chart-style-check{
+  display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);
+  font-weight:600;cursor:pointer;user-select:none;
+}
+.chart-style-check input{accent-color:var(--aegean)}
+.chart-smooth-wrap{flex:1;min-width:160px}
+.chart-smooth-wrap.is-disabled{opacity:.4;pointer-events:none}
 body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,body.anon .hold-row{filter:blur(12px)!important;opacity:.15!important;user-select:none!important}
 
 </style>
@@ -373,6 +385,15 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
     <button type="button" class="tab-btn" data-tab="livret" onclick="setTab('livret')">Livret A</button>
     <button type="button" class="tab-btn" data-tab="staging" onclick="setTab('staging')">Staging</button>
   </nav>
+  <div class="chart-style-bar" id="chart-style-bar">
+    <label class="chart-style-check">
+      <input type="checkbox" id="chart-discrete" onchange="onChartStyleChange()"> Discrete (no smoothing)
+    </label>
+    <label class="proj-slider chart-smooth-wrap" style="padding:8px 12px;margin:0">
+      <span>Slope smooth <strong id="chart-smooth-val">40%</strong></span>
+      <input type="range" id="chart-smooth" min="0" max="100" step="5" value="40" oninput="onChartStyleChange()">
+    </label>
+  </div>
 
   <section class="tab-panel on" id="panel-overview">
     <div class="section-head">
@@ -544,6 +565,8 @@ let activeTab = localStorage.getItem('dashboard_tab') || 'overview';
 let projMonthly = +(localStorage.getItem('dashboard_proj_monthly') || 700);
 let projYears = +(localStorage.getItem('dashboard_proj_years') || 10);
 let projRate = +(localStorage.getItem('dashboard_proj_rate') || 7);
+let chartDiscrete = localStorage.getItem('dashboard_chart_discrete') === '1';
+let chartSmooth = Math.min(100, Math.max(0, +(localStorage.getItem('dashboard_chart_smooth') || 40)));
 let aiGenerating = false;
 const charts = {};
 const LIVRET_TARGET = 8000;
@@ -1443,6 +1466,59 @@ function renderStaging() {
   const shrink = Math.max(0, exp.stagingTarget - v);
   el.innerHTML = `<div class="stat-pair"><div class="stat"><div class="stat-lbl">Staging now</div><div class="stat-val blur-val">${fmt(v)}</div></div><div class="stat"><div class="stat-lbl">PEA lock inside</div><div class="stat-val blur-val">${fmt(Math.min(v, locked))}</div></div></div><p class="traj-note" style="margin-top:14px">Target pot ~${fmt(exp.stagingTarget)} (€${locked} PEA + ~€200 surplus). ${v < exp.stagingTarget ? `Down ~${fmt(shrink)} vs full pot — that shrink is the live feedback.` : 'Full pot still intact — strong month so far.'} At EOM, remaining → PEA${(STATE.livretA || 0) < LIVRET_TARGET ? ' (after topping Livret to €8k if needed)' : ''}.</p><p class="traj-note">If spend pace holds, expected PEA ≈ <strong class="blur-val">${fmt(exp.expectedToPea)}</strong>.</p>`;
 }
+function syncChartStyleUI() {
+  const disc = document.getElementById('chart-discrete');
+  const smooth = document.getElementById('chart-smooth');
+  const val = document.getElementById('chart-smooth-val');
+  const wrap = document.querySelector('.chart-smooth-wrap');
+  if (disc) disc.checked = chartDiscrete;
+  if (smooth) smooth.value = String(chartSmooth);
+  if (val) val.textContent = chartSmooth + '%';
+  if (wrap) wrap.classList.toggle('is-disabled', chartDiscrete);
+}
+
+function onChartStyleChange() {
+  const disc = document.getElementById('chart-discrete');
+  const smooth = document.getElementById('chart-smooth');
+  if (disc) chartDiscrete = !!disc.checked;
+  if (smooth) chartSmooth = +smooth.value;
+  localStorage.setItem('dashboard_chart_discrete', chartDiscrete ? '1' : '0');
+  localStorage.setItem('dashboard_chart_smooth', String(chartSmooth));
+  syncChartStyleUI();
+  redrawAllCharts();
+}
+
+function redrawAllCharts() {
+  drawPeaHistory();
+  drawPeaProjection();
+  drawLivretChart();
+}
+
+/** Shared line curve: discrete = straight segments; else tension from smooth slider. */
+function chartLineStyle(opts = {}) {
+  const allowStep = !!opts.allowStep;
+  if (chartDiscrete) {
+    return {
+      tension: 0,
+      stepped: allowStep ? 'after' : false,
+      cubicInterpolationMode: 'default',
+    };
+  }
+  return {
+    tension: (chartSmooth / 100) * 0.65,
+    stepped: false,
+    cubicInterpolationMode: 'default',
+  };
+}
+
+function chartHoverOpts() {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false, axis: 'x' },
+  };
+}
+
 function drawLivretChart() {
   const canvas = document.getElementById('livretChart');
   if (!canvas) return;
@@ -1457,12 +1533,53 @@ function drawLivretChart() {
       if (prev) series = [prev].concat(series);
     }
   }
+  const curve = chartLineStyle({ allowStep: true });
+  const labels = series.map(p => p.date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }));
   charts.livret = new Chart(canvas.getContext('2d'), {
     type: 'line',
-    data: { labels: series.map(p => p.date.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' })),
-      datasets: [{ label: 'Livret A', data: series.map(p => Math.round(p.balance)), borderColor: '#7ea0d3', backgroundColor: 'rgba(126,160,211,0.12)', borderWidth: 2, pointRadius: 2, pointBackgroundColor: '#e8c46a', tension: 0.25, fill: true }] },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => fmtTip('Livret A', c.raw) } } },
-      scales: { x: { ticks: { color: '#8b9aab', font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { display: false } }, y: { ticks: { callback: v => fmtAxis(v), color: '#8b9aab', font: { size: 10 } }, grid: { color: 'rgba(126,160,211,0.08)' } } } },
+    data: {
+      labels,
+      datasets: [{
+        label: 'Livret A',
+        data: series.map(p => Math.round(p.balance)),
+        borderColor: '#7ea0d3',
+        backgroundColor: 'rgba(126,160,211,0.12)',
+        borderWidth: 2,
+        pointRadius: 4,
+        pointHoverRadius: 7,
+        pointHitRadius: 18,
+        pointBackgroundColor: '#e8c46a',
+        pointBorderColor: '#0b1524',
+        pointBorderWidth: 1,
+        fill: true,
+        tension: curve.tension,
+        stepped: curve.stepped,
+      }],
+    },
+    options: {
+      ...chartHoverOpts(),
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          enabled: true,
+          callbacks: {
+            title(items) {
+              const i = items[0]?.dataIndex;
+              if (i == null || !series[i]) return '';
+              return series[i].date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+            },
+            label(c) {
+              if (c.raw == null) return null;
+              return anonMode ? 'Livret A: •••' : `Livret A: ${fmt(c.raw)}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { color: '#8b9aab', font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { display: false } },
+        y: { ticks: { callback: v => fmtAxis(v), color: '#8b9aab', font: { size: 10 } }, grid: { color: 'rgba(126,160,211,0.08)' } },
+      },
+    },
   });
 }
 
@@ -1552,6 +1669,7 @@ function drawPeaHistory() {
   const funded = hist.map(p => Math.round(p.funded));
   const fundMarks = hist.map(p => p.isFunding ? Math.round(p.funded) : null);
   const liveVal = hist.map(p => p.value != null ? Math.round(p.value) : null);
+  const curve = chartLineStyle({ allowStep: true });
 
   const datasets = [
     {
@@ -1561,9 +1679,10 @@ function drawPeaHistory() {
       backgroundColor: 'rgba(126,160,211,0.10)',
       borderWidth: 2,
       pointRadius: 0,
-      tension: 0.15,
+      pointHitRadius: 12,
       fill: true,
-      stepped: 'after',
+      tension: curve.tension,
+      stepped: curve.stepped,
     },
     {
       label: 'Funding moments',
@@ -1571,7 +1690,8 @@ function drawPeaHistory() {
       borderColor: 'transparent',
       backgroundColor: '#e8c46a',
       pointRadius: hist.map(p => p.isFunding ? 5 : 0),
-      pointHoverRadius: 7,
+      pointHoverRadius: 8,
+      pointHitRadius: 16,
       pointBackgroundColor: '#e8c46a',
       pointBorderColor: '#0b1524',
       pointBorderWidth: 1.5,
@@ -1586,6 +1706,8 @@ function drawPeaHistory() {
       backgroundColor: '#d4e3ff',
       borderWidth: 0,
       pointRadius: hist.map(p => p.value != null ? 6 : 0),
+      pointHoverRadius: 8,
+      pointHitRadius: 16,
       pointBackgroundColor: '#d4e3ff',
       pointBorderColor: '#e8c46a',
       pointBorderWidth: 2,
@@ -1597,13 +1719,17 @@ function drawPeaHistory() {
     type: 'line',
     data: { labels, datasets },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
+      ...chartHoverOpts(),
       plugins: {
         legend: { display: true, labels: { color: '#8b9aab', font: { size: 11, family: 'Plus Jakarta Sans' }, boxWidth: 12 } },
         tooltip: {
+          enabled: true,
           callbacks: {
+            title(items) {
+              const i = items[0]?.dataIndex;
+              if (i == null || !hist[i]) return '';
+              return hist[i].date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+            },
             label(c) {
               if (c.raw == null) return null;
               const p = hist[c.dataIndex];
@@ -1678,6 +1804,7 @@ function drawPeaProjection() {
   const labels = seriesByRate[0].points.map(p =>
     p.year === 0 ? `Now · ${baseYear}` : `${baseYear + p.year}`
   );
+  const curve = chartLineStyle({ allowStep: false });
   const datasets = [];
 
   seriesByRate.forEach((s, i) => {
@@ -1690,8 +1817,11 @@ function drawPeaProjection() {
         borderColor: col,
         borderWidth: s.selected ? 2.5 : 1.5,
         borderDash: s.selected ? undefined : [5, 4],
-        pointRadius: 0,
-        tension: 0.25,
+        pointRadius: 3,
+        pointHoverRadius: 6,
+        pointHitRadius: 16,
+        tension: curve.tension,
+        stepped: curve.stepped,
       });
     }
     if ((projMode === 'net' || projMode === 'both') && s.selected) {
@@ -1701,8 +1831,11 @@ function drawPeaProjection() {
         borderColor: colors.net,
         borderWidth: 2,
         borderDash: [6, 4],
-        pointRadius: 0,
-        tension: 0.25,
+        pointRadius: 3,
+        pointHoverRadius: 6,
+        pointHitRadius: 16,
+        tension: curve.tension,
+        stepped: curve.stepped,
       });
     }
   });
@@ -1711,12 +1844,13 @@ function drawPeaProjection() {
     type: 'line',
     data: { labels, datasets },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
+      ...chartHoverOpts(),
       plugins: {
         legend: { display: true, labels: { color: '#8b9aab', font: { size: 11, family: 'Plus Jakarta Sans' }, boxWidth: 12 } },
-        tooltip: { callbacks: { label: c => fmtTip(c.dataset.label, c.raw) } },
+        tooltip: {
+          enabled: true,
+          callbacks: { label: c => (c.raw == null ? null : fmtTip(c.dataset.label, c.raw)) },
+        },
       },
       scales: {
         x: { ticks: { color: '#8b9aab', font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { display: false } },
@@ -1778,6 +1912,7 @@ function renderAll(txs) {
     projMonthly = STATE.peaMonthly;
   }
   syncProjControlsUI();
+  syncChartStyleUI();
   drawPeaHistory();
   drawPeaProjection();
   drawLivretChart();
