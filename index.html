@@ -290,6 +290,18 @@ body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
 .hold-nums span{display:block;font-family:var(--mono);font-size:12px;margin-top:3px}
 .pos{color:var(--ok)}.neg{color:var(--bad)}
 .money-rule{font-size:12px;color:var(--muted);max-width:52em;margin:8px 0 0;line-height:1.5}
+.proj-controls{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:12px;margin:0 0 14px;
+}
+.proj-slider{
+  display:flex;flex-direction:column;gap:8px;padding:12px 14px;
+  border:1px solid var(--line);border-radius:var(--radius);
+  background:rgba(16,28,44,.72);
+}
+.proj-slider span{font-size:12px;color:var(--muted);font-weight:500}
+.proj-slider strong{color:var(--gold);font-family:var(--mono);font-weight:600}
+.proj-slider input[type=range]{width:100%;accent-color:var(--aegean)}
 body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,body.anon .hold-row{filter:blur(12px)!important;opacity:.15!important;user-select:none!important}
 
 </style>
@@ -379,17 +391,44 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
   <section class="tab-panel" id="panel-pea">
     <div class="section-head">
       <h2>PEA</h2>
-      <p>Per-fund performance, contributions, and a forward path — gross / net after 5y.</p>
+      <p>Per-fund performance, real funding history, then a separate playground for projections.</p>
     </div>
     <div id="pea-holdings" style="margin-bottom:18px"></div>
+
+    <div class="section-head" style="margin-top:8px">
+      <h2 style="font-size:18px">Funding history</h2>
+      <p>Cumulative versements and today’s value — no projections, so the slope stays honest.</p>
+    </div>
     <div class="range-row" role="group" aria-label="Chart range"><button type="button" data-range="1M" onclick="setChartRange('1M')">1M</button><button type="button" data-range="3M" onclick="setChartRange('3M')">3M</button><button type="button" data-range="1Y" onclick="setChartRange('1Y')">1Y</button><button type="button" data-range="3Y" onclick="setChartRange('3Y')">3Y</button><button type="button" data-range="5Y" onclick="setChartRange('5Y')">5Y</button><button type="button" data-range="Max" onclick="setChartRange('Max')">Max</button></div>
+    <div class="chart-wrap"><canvas id="trajChart"></canvas></div>
+    <p class="traj-note" id="traj-note"></p>
+    <div class="feed" id="pea-funding-list" style="margin-top:12px"></div>
+
+    <div class="section-head" style="margin-top:28px">
+      <h2 style="font-size:18px">Projection playground</h2>
+      <p>Play with monthly DCA, horizon, and growth. Comparison lines stay visible next to your selected rate.</p>
+    </div>
+    <div class="proj-controls">
+      <label class="proj-slider">
+        <span>Monthly invest <strong id="proj-monthly-val">€700</strong></span>
+        <input type="range" id="proj-monthly" min="0" max="2000" step="50" value="700" oninput="onProjControlsChange()">
+      </label>
+      <label class="proj-slider">
+        <span>Horizon <strong id="proj-years-val">10y</strong></span>
+        <input type="range" id="proj-years" min="1" max="30" step="1" value="10" oninput="onProjControlsChange()">
+      </label>
+      <label class="proj-slider">
+        <span>Growth (selected) <strong id="proj-rate-val">7%</strong></span>
+        <input type="range" id="proj-rate" min="0" max="15" step="0.5" value="7" oninput="onProjControlsChange()">
+      </label>
+    </div>
     <div class="traj-toggle" role="group" aria-label="Projection view">
       <button type="button" class="on" id="tog-gross" onclick="setProjMode('gross')">Gross</button>
       <button type="button" id="tog-net" onclick="setProjMode('net')">Net after 5y</button>
       <button type="button" id="tog-both" onclick="setProjMode('both')">Both</button>
     </div>
-    <div class="chart-wrap"><canvas id="trajChart"></canvas></div>
-    <p class="traj-note" id="traj-note"></p>
+    <div class="chart-wrap"><canvas id="projChart"></canvas></div>
+    <p class="traj-note" id="proj-note"></p>
   </section>
 
   <section class="tab-panel" id="panel-livret">
@@ -472,6 +511,9 @@ let anonMode = localStorage.getItem('dashboard_anon') === '1';
 let projMode = 'both';
 let chartRange = localStorage.getItem('dashboard_chart_range') || '1Y';
 let activeTab = localStorage.getItem('dashboard_tab') || 'overview';
+let projMonthly = +(localStorage.getItem('dashboard_proj_monthly') || 700);
+let projYears = +(localStorage.getItem('dashboard_proj_years') || 10);
+let projRate = +(localStorage.getItem('dashboard_proj_rate') || 7);
 let aiGenerating = false;
 const charts = {};
 const LIVRET_TARGET = 8000;
@@ -999,7 +1041,7 @@ function setChartRange(id) {
   document.querySelectorAll('[data-range]').forEach(btn => {
     btn.classList.toggle('on', btn.getAttribute('data-range') === id);
   });
-  drawTrajectory();
+  drawPeaHistory();
   drawLivretChart();
 }
 function setTab(id, persist = true) {
@@ -1012,7 +1054,7 @@ function setTab(id, persist = true) {
     panel.classList.toggle('on', panel.id === 'panel-' + id);
   });
   requestAnimationFrame(() => {
-    if (id === 'pea') drawTrajectory();
+    if (id === 'pea') { drawPeaHistory(); drawPeaProjection(); syncProjControlsUI(); }
     if (id === 'livret') drawLivretChart();
   });
 }
@@ -1201,40 +1243,67 @@ function setProjMode(mode) {
     const el = document.getElementById('tog-' + m);
     if (el) el.classList.toggle('on', m === mode);
   });
-  drawTrajectory();
+  drawPeaProjection();
+}
+
+function syncProjControlsUI() {
+  const m = document.getElementById('proj-monthly');
+  const y = document.getElementById('proj-years');
+  const r = document.getElementById('proj-rate');
+  if (m) m.value = String(projMonthly);
+  if (y) y.value = String(projYears);
+  if (r) r.value = String(projRate);
+  const mv = document.getElementById('proj-monthly-val');
+  const yv = document.getElementById('proj-years-val');
+  const rv = document.getElementById('proj-rate-val');
+  if (mv) mv.textContent = fmt(projMonthly);
+  if (yv) yv.textContent = projYears + 'y';
+  if (rv) rv.textContent = projRate + '%';
+}
+
+function onProjControlsChange() {
+  const m = document.getElementById('proj-monthly');
+  const y = document.getElementById('proj-years');
+  const r = document.getElementById('proj-rate');
+  if (m) projMonthly = +m.value;
+  if (y) projYears = +y.value;
+  if (r) projRate = +r.value;
+  localStorage.setItem('dashboard_proj_monthly', String(projMonthly));
+  localStorage.setItem('dashboard_proj_years', String(projYears));
+  localStorage.setItem('dashboard_proj_rate', String(projRate));
+  syncProjControlsUI();
+  drawPeaProjection();
 }
 
 function buildContributionSeries() {
   const contribs = (STATE.peaContributions || [])
     .filter(c => c.date && c.amount != null)
-    .map(c => ({ date: new Date(c.date), amount: +c.amount }))
+    .map(c => ({ date: new Date(c.date), amount: +c.amount, label: c.label || '' }))
     .filter(c => !isNaN(+c.date))
     .sort((a, b) => a.date - b.date);
   let cum = 0;
   const points = contribs.map(c => {
     cum += c.amount;
-    return { date: c.date, funded: cum, value: null };
+    return { date: c.date, funded: cum, amount: c.amount, label: c.label, value: null, isFunding: true };
   });
   if (STATE.pea && points.length) {
-    points.push({ date: new Date(), funded: cum, value: STATE.pea });
+    points.push({ date: new Date(), funded: cum, amount: 0, label: 'Today', value: STATE.pea, isFunding: false });
   } else if (STATE.pea) {
-    points.push({ date: new Date(), funded: STATE.monthlyCostBasis || 0, value: STATE.pea });
+    points.push({ date: new Date(), funded: STATE.monthlyCostBasis || 0, amount: 0, label: 'Today', value: STATE.pea, isFunding: false });
   }
   return points;
 }
 
-function projectPea(years = 10, annualRate = 0.07) {
-  const monthly = STATE.peaMonthly > 0 ? STATE.peaMonthly : 700;
+function projectPea(years, annualRate, monthly) {
+  const mo = monthly != null ? monthly : (STATE.peaMonthly > 0 ? STATE.peaMonthly : 700);
   const r = annualRate / 12;
   let value = STATE.pea || 0;
   let cost = STATE.monthlyCostBasis || 0;
-  const startYears = yearsHeld(STATE.peaStartedAt);
-  // Net always models withdrawal after the 5-year mark (PS 17.2% on gain).
   const out = [{ year: 0, gross: value, net: peaNetAfter5y(value, cost).net, cost }];
   for (let y = 1; y <= years; y++) {
     for (let m = 0; m < 12; m++) {
-      value = value * (1 + r) + monthly;
-      cost += monthly;
+      value = value * (1 + r) + mo;
+      cost += mo;
     }
     const est = peaNetAfter5y(value, cost);
     out.push({ year: y, gross: value, net: est.net, cost, regime: est.regime });
@@ -1242,74 +1311,56 @@ function projectPea(years = 10, annualRate = 0.07) {
   return out;
 }
 
-function drawTrajectory() {
+function drawPeaHistory() {
   const canvas = document.getElementById('trajChart');
   if (!canvas) return;
   if (charts.traj) { charts.traj.destroy(); delete charts.traj; }
 
   let hist = buildContributionSeries();
   const cut = rangeCutoff();
-  if (cut) hist = hist.filter(p => p.date >= cut);
-  const projYears = (chartRange === '1M' || chartRange === '3M') ? 3 : (chartRange === '1Y' ? 5 : 10);
-  const proj = projectPea(projYears, 0.07);
-  const histLabels = hist.map(p => p.date.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }));
+  if (cut) hist = hist.filter(p => p.date >= cut || (!p.isFunding && p.value != null));
+  const labels = hist.map(p => p.date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }));
   const funded = hist.map(p => Math.round(p.funded));
+  const fundMarks = hist.map(p => p.isFunding ? Math.round(p.funded) : null);
   const liveVal = hist.map(p => p.value != null ? Math.round(p.value) : null);
-
-  const projLabels = proj.map(p => p.year === 0 ? 'Now' : '+' + p.year + 'y');
-  const gross = proj.map(p => Math.round(p.gross));
-  const net = proj.map(p => Math.round(p.net));
-
-  const labels = histLabels.concat(projLabels.slice(1));
-  const padHist = (arr) => arr.concat(Array(proj.length - 1).fill(null));
-  const padProj = (arr) => Array(Math.max(0, hist.length - 1)).fill(null).concat(arr);
 
   const datasets = [
     {
       label: 'Versements (cumul)',
-      data: padHist(funded),
-      borderColor: '#6b7c8f',
-      backgroundColor: 'transparent',
-      borderWidth: 1.5,
-      borderDash: [4, 4],
+      data: funded,
+      borderColor: '#7ea0d3',
+      backgroundColor: 'rgba(126,160,211,0.10)',
+      borderWidth: 2,
       pointRadius: 0,
-      tension: 0.25,
+      tension: 0.15,
+      fill: true,
+      stepped: 'after',
+    },
+    {
+      label: 'Funding moments',
+      data: fundMarks,
+      borderColor: 'transparent',
+      backgroundColor: '#e8c46a',
+      pointRadius: hist.map(p => p.isFunding ? 5 : 0),
+      pointHoverRadius: 7,
+      pointBackgroundColor: '#e8c46a',
+      pointBorderColor: '#0b1524',
+      pointBorderWidth: 1.5,
+      showLine: false,
     },
   ];
   if (liveVal.some(v => v != null)) {
     datasets.push({
       label: 'PEA today',
-      data: padHist(liveVal),
+      data: liveVal,
       borderColor: '#d4e3ff',
-      backgroundColor: 'rgba(126,160,211,0.12)',
-      borderWidth: 2.5,
-      pointRadius: 3,
-      pointBackgroundColor: '#e8c46a',
-      tension: 0.3,
-      spanGaps: true,
-    });
-  }
-  if (projMode === 'gross' || projMode === 'both') {
-    datasets.push({
-      label: 'Projected gross',
-      data: padProj(gross),
-      borderColor: '#7ea0d3',
-      borderWidth: 2,
-      pointRadius: 0,
-      tension: 0.25,
-      spanGaps: true,
-    });
-  }
-  if (projMode === 'net' || projMode === 'both') {
-    datasets.push({
-      label: 'Net after 5y',
-      data: padProj(net),
-      borderColor: '#e8c46a',
-      borderWidth: 2,
-      borderDash: projMode === 'both' ? [6, 4] : undefined,
-      pointRadius: 0,
-      tension: 0.25,
-      spanGaps: true,
+      backgroundColor: '#d4e3ff',
+      borderWidth: 0,
+      pointRadius: hist.map(p => p.value != null ? 6 : 0),
+      pointBackgroundColor: '#d4e3ff',
+      pointBorderColor: '#e8c46a',
+      pointBorderWidth: 2,
+      showLine: false,
     });
   }
 
@@ -1322,7 +1373,18 @@ function drawTrajectory() {
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: true, labels: { color: '#8b9aab', font: { size: 11, family: 'Plus Jakarta Sans' }, boxWidth: 12 } },
-        tooltip: { callbacks: { label: c => fmtTip(c.dataset.label, c.raw) } },
+        tooltip: {
+          callbacks: {
+            label(c) {
+              if (c.raw == null) return null;
+              const p = hist[c.dataIndex];
+              if (c.dataset.label === 'Funding moments' && p) {
+                return anonMode ? '•••' : `+${fmt(p.amount)}${p.label ? ' · ' + p.label : ''}`;
+              }
+              return fmtTip(c.dataset.label, c.raw);
+            },
+          },
+        },
       },
       scales: {
         x: { ticks: { color: '#8b9aab', font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }, grid: { display: false } },
@@ -1331,14 +1393,119 @@ function drawTrajectory() {
     },
   });
 
-  const held = yearsHeld(STATE.peaStartedAt);
-  const y5 = proj.find(p => (held + p.year) >= 5) || proj[proj.length - 1];
-  document.getElementById('traj-note').textContent =
-    `Assumes ~${fmt(STATE.peaMonthly || 700)}/mo and 7% annualized. Net = after 5-year mark (PS 17.2% on gain only) — illustrative, not advice. ` +
-    (STATE.peaStartedAt
-      ? `Opened ${STATE.peaStartedAt}. At +${y5.year}y projected gross ~${fmt(y5.gross)}, net after 5y ~${fmt(y5.net)}.`
-      : '');
+  const allFund = buildContributionSeries().filter(p => p.isFunding);
+  const inView = cut ? allFund.filter(p => p.date >= cut) : allFund;
+  const note = document.getElementById('traj-note');
+  if (note) {
+    const sum = inView.reduce((s, p) => s + p.amount, 0);
+    note.textContent = inView.length
+      ? `${inView.length} funding event${inView.length > 1 ? 's' : ''} in view · ${fmt(sum)} paid in` +
+        (STATE.pea ? ` · PEA now ${fmt(STATE.pea)}` : '') +
+        (STATE.peaStartedAt ? ` · opened ${STATE.peaStartedAt}` : '')
+      : 'No funding events in this window.';
+  }
+  const list = document.getElementById('pea-funding-list');
+  if (list) {
+    const rows = [...inView].reverse().slice(0, 12);
+    list.innerHTML = rows.length
+      ? rows.map(p => `<div class="feed-item">
+          <div>
+            <div class="feed-cat">${p.label || 'Versement'}</div>
+            <div class="feed-meta">${p.date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} · cumul ${fmt(p.funded)}</div>
+          </div>
+          <div class="feed-amt inc blur-val">+${fmt(p.amount)}</div>
+        </div>`).join('')
+      : '<p class="muted">No versements to list for this range.</p>';
+  }
 }
+
+function drawPeaProjection() {
+  const canvas = document.getElementById('projChart');
+  if (!canvas) return;
+  if (charts.proj) { charts.proj.destroy(); delete charts.proj; }
+
+  const years = Math.max(1, projYears || 10);
+  const monthly = Math.max(0, projMonthly || 0);
+  const selected = Math.max(0, projRate || 0);
+  // Comparison rates around the selected one (unique, sorted)
+  const rates = [...new Set([
+    Math.max(0, +(selected - 3).toFixed(1)),
+    +selected.toFixed(1),
+    Math.min(15, +(selected + 3).toFixed(1)),
+  ])].sort((a, b) => a - b);
+
+  const colors = {
+    low: '#6b7c8f',
+    mid: '#7ea0d3',
+    high: '#e8c46a',
+    net: '#f07171',
+  };
+  const seriesByRate = rates.map(rate => ({
+    rate,
+    points: projectPea(years, rate / 100, monthly),
+    selected: Math.abs(rate - selected) < 0.05,
+  }));
+  const labels = seriesByRate[0].points.map(p => p.year === 0 ? 'Now' : '+' + p.year + 'y');
+  const datasets = [];
+
+  seriesByRate.forEach((s, i) => {
+    const key = i === 0 ? 'low' : (i === seriesByRate.length - 1 ? 'high' : 'mid');
+    const col = s.selected ? colors.mid : colors[key];
+    if (projMode === 'gross' || projMode === 'both') {
+      datasets.push({
+        label: `${s.rate}% gross` + (s.selected ? ' ★' : ''),
+        data: s.points.map(p => Math.round(p.gross)),
+        borderColor: col,
+        borderWidth: s.selected ? 2.5 : 1.5,
+        borderDash: s.selected ? undefined : [5, 4],
+        pointRadius: 0,
+        tension: 0.25,
+      });
+    }
+    if ((projMode === 'net' || projMode === 'both') && s.selected) {
+      datasets.push({
+        label: `${s.rate}% net after 5y ★`,
+        data: s.points.map(p => Math.round(p.net)),
+        borderColor: colors.net,
+        borderWidth: 2,
+        borderDash: [6, 4],
+        pointRadius: 0,
+        tension: 0.25,
+      });
+    }
+  });
+
+  charts.proj = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: true, labels: { color: '#8b9aab', font: { size: 11, family: 'Plus Jakarta Sans' }, boxWidth: 12 } },
+        tooltip: { callbacks: { label: c => fmtTip(c.dataset.label, c.raw) } },
+      },
+      scales: {
+        x: { ticks: { color: '#8b9aab', font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { display: false } },
+        y: { ticks: { callback: v => fmtAxis(v), color: '#8b9aab', font: { size: 10 } }, grid: { color: 'rgba(126,160,211,0.08)' } },
+      },
+    },
+  });
+
+  const main = seriesByRate.find(s => s.selected) || seriesByRate[Math.floor(seriesByRate.length / 2)];
+  const end = main.points[main.points.length - 1];
+  const note = document.getElementById('proj-note');
+  if (note && end) {
+    note.textContent =
+      `From ${fmt(STATE.pea || 0)} now · ${fmt(monthly)}/mo · ${selected}% selected` +
+      ` · at +${years}y ≈ ${fmt(end.gross)} gross` +
+      ` / ~${fmt(end.net)} net after 5y (PS 17.2% on gain) — illustrative, not advice.`;
+  }
+}
+
+/** @deprecated name kept for any leftover callers */
+function drawTrajectory() { drawPeaHistory(); drawPeaProjection(); }
 
 function updateStatus() {
   const now = new Date();
@@ -1375,7 +1542,12 @@ function renderAll(txs) {
   renderPeaHoldings();
   renderLivretPanel();
   renderStaging();
-  drawTrajectory();
+  if (STATE.peaMonthly > 0 && !localStorage.getItem('dashboard_proj_monthly')) {
+    projMonthly = STATE.peaMonthly;
+  }
+  syncProjControlsUI();
+  drawPeaHistory();
+  drawPeaProjection();
   drawLivretChart();
   updateStatus();
   setTab(activeTab, false);
