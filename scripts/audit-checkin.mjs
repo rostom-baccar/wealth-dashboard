@@ -49,6 +49,8 @@ const required = [
   ['no snake_case search tool', null], // special
   ['isGeminiFatalError', /function isGeminiFatalError\(/],
   ['fatal 401/403/429', /status === 401 \|\| status === 403 \|\| status === 429/],
+  ['quota detector', /function isGeminiQuotaError\(/],
+  ['quota cooldown', /LS_GEMINI_COOLDOWN|gemini_quota_cooldown_until/],
   ['thought filter', /p\.thought !== true/],
   ['thinkingBudget 2.5 only', /if \(\/2\\\.5\/\.test\(modelId\)\)/],
   ['unbudgetedCats', /unbudgetedCats/],
@@ -115,11 +117,17 @@ function extractGeminiText(data) {
     .trim();
 }
 
+function isGeminiQuotaError(err) {
+  const status = err && err.status;
+  const msg = String((err && err.message) || '');
+  return status === 429 || /RESOURCE_EXHAUSTED|quota|rate.?limit|billing details/i.test(msg);
+}
+
 function isGeminiFatalError(err) {
   const status = err && err.status;
   const msg = String((err && err.message) || '');
   if (status === 401 || status === 403 || status === 429) return true;
-  if (/RESOURCE_EXHAUSTED|quota exceeded|rate.?limit/i.test(msg)) return true;
+  if (isGeminiQuotaError(err)) return true;
   if (status === 400 && /api[_ ]?key|API_KEY|invalid|permission|CONSUMER|expired/i.test(msg)) return true;
   return false;
 }
@@ -171,6 +179,10 @@ function isGeminiFatalError(err) {
     if (got === want) ok(`fatal-${err.status}`);
     else fail(`fatal-${err.status}`, `got ${got} want ${want}`);
   }
+  // Google's real wording — must match even when status is missing/odd.
+  const quotaMsg = { status: 400, message: 'You exceeded your current quota, please check your plan and billing details.' };
+  if (isGeminiQuotaError(quotaMsg) && isGeminiFatalError(quotaMsg)) ok('quota-exceeded-wording');
+  else fail('quota-exceeded-wording');
 }
 
 // Snapshot life-event surface (dossier must be able to see these)
