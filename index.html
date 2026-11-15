@@ -1636,14 +1636,15 @@ function onChartStyleChange(id) {
   else if (id === 'livret') drawLivretChart();
 }
 
-/** Per-chart line curve: discrete = straight segments; else tension from that chart’s smooth slider. */
+/** Per-chart line curve: discrete or smooth 0% = sudden steps; else tension from the slider. */
 function chartLineStyle(id, opts = {}) {
   const st = chartStyles[id] || CHART_STYLE_DEFAULT;
-  const allowStep = !!opts.allowStep;
-  if (st.discrete) {
+  // 0% smooth is the same “sudden jump” look as Discrete (stepped after each point).
+  const sudden = !!st.discrete || !(st.smooth > 0);
+  if (sudden) {
     return {
       tension: 0,
-      stepped: allowStep ? 'after' : false,
+      stepped: 'after',
       cubicInterpolationMode: 'default',
     };
   }
