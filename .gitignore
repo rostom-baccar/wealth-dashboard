@@ -5,3 +5,6 @@ data/wallet-snapshot.json
 .env.*
 *.pem
 .DS_Store
+
+data/private/
+data/history.json

@@ -439,7 +439,7 @@ body.anon .nw-amount{
     <div style="margin-bottom:20px">
       <label style="font-size:11px;color:#7a7f9a;display:block;margin-bottom:4px">Apps Script web app URL (required for live Refresh)</label>
       <input id="modal-export-url" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec" style="width:100%;background:#1a1e2a;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 10px;color:#f0f2f7;font-size:12px">
-      <div style="font-size:10px;color:#7a7f9a;margin-top:4px;line-height:1.4">Required. Deploy latest WalletExport.gs as Web app (Execute as Me, Anyone). Refresh rebuilds from Drive sqlite and merges finary-balances.json.</div>
+      <div style="font-size:10px;color:#7a7f9a;margin-top:4px;line-height:1.4">Required for live Refresh. Deploy latest WalletExport.gs as Web app (Execute as Me, Anyone). Refresh rebuilds from Drive sqlite and merges finary-balances.json. Without this URL, unlock still loads the encrypted vault pushed from Cursor (<code>tools/sync_dashboard.py</code>).</div>
     </div>
     <input id="modal-income" type="hidden" value="">
     <div style="display:flex;gap:8px">
@@ -1897,18 +1897,29 @@ async function forceAiRefresh() {
 // ═══════════════════════════════════════════════════════
 function updateStatus() {
   const now = new Date();
-  document.getElementById('sync-time').textContent = T('updated') + ' : ' + now.toLocaleTimeString(lang==='fr'?'fr-FR':'en-GB',{hour:'2-digit',minute:'2-digit'}) + ' · ' + now.toLocaleDateString(lang==='fr'?'fr-FR':'en-GB');
+  const snapAge = STATE.lastSnapshotSync ? new Date(STATE.lastSnapshotSync) : null;
+  const syncBits = [
+    T('updated') + ' : ' + now.toLocaleTimeString(lang==='fr'?'fr-FR':'en-GB',{hour:'2-digit',minute:'2-digit'}) + ' · ' + now.toLocaleDateString(lang==='fr'?'fr-FR':'en-GB'),
+    snapAge ? ('snapshot ' + snapAge.toLocaleString(lang==='fr'?'fr-FR':'en-GB')) : null,
+  ].filter(Boolean);
+  document.getElementById('sync-time').textContent = syncBits.join(' · ');
   const balAge = STATE.balanceDate ? new Date(STATE.balanceDate) : null;
-  const balLabel = STATE.finaryOk
-    ? (STATE.balancesSource === 'finary' ? 'Finary ✓' : 'Balances ✓')
-    : 'Finary ✗';
-  const balTitle = balAge ? `Balances updated ${balAge.toLocaleString()}` : 'No balances in snapshot — set ⚙️ Data + run Apps Script';
+  const balStaleDays = balAge ? ((now - balAge) / 86400000) : Infinity;
+  const balStale = balStaleDays > 7;
+  const balLabel = !STATE.finaryOk
+    ? 'Finary ✗'
+    : balStale
+      ? `Finary ⚠ ${Math.floor(balStaleDays)}d`
+      : (STATE.balancesSource === 'finary' ? 'Finary ✓' : 'Balances ✓');
+  const balTitle = balAge
+    ? `Balances updated ${balAge.toLocaleString()}${balStale ? ' — ask Cursor to sync Finary, then Refresh' : ''}`
+    : 'No balances in snapshot — ask Cursor to sync Finary, or set ⚙️ + Refresh';
   const driveTitle = STATE.driveOk
     ? `Via ${STATE.snapshotSource || '?'} · ${STATE.lastSnapshotSync ? new Date(STATE.lastSnapshotSync).toLocaleString() : 'OK'}`
     : (STATE.snapshotFetchError || 'Could not load snapshot');
   document.getElementById('status-bar').innerHTML = [
     `<span class="pill ${STATE.driveOk?'pill-ok':'pill-err'}" title="${driveTitle}">${STATE.driveOk?'Drive ✓':'Drive ✗'}</span>`,
-    `<span class="pill ${STATE.finaryOk?'pill-ok':'pill-err'}" title="${balTitle}">${balLabel}</span>`,
+    `<span class="pill ${STATE.finaryOk && !balStale?'pill-ok':'pill-err'}" title="${balTitle}">${balLabel}</span>`,
     `<span class="pill ${STATE.savingsOk?'pill-ok':'pill-err'}">${STATE.savingsOk?'Wallet ✓':'Wallet ✗'}</span>`,
     `<span class="pill pill-ok">${STATE.transactions.length} ${T('tx')}</span>`,
   ].join('');
