@@ -260,6 +260,9 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .ai-brief p{margin:0 0 0.85em;color:rgba(238,243,248,.82)}
 .ai-brief p:last-child{margin-bottom:0}
 .ai-status{margin:12px 0 0;font-size:11px;color:var(--muted);line-height:1.4}
+.ai-status[data-tone="bad"]{color:var(--bad)}
+.ai-status[data-tone="ok"]{color:var(--ok)}
+.ai-status[data-tone="warn"]{color:var(--gold)}
 .ai-loading{font-style:italic}
 .doing-pulse{
   display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px;
@@ -2757,22 +2760,26 @@ function renderAiHtml(text) {
   return parts.map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
 }
 
-function aiCacheKey() { return 'dashboard_ai_checkin_v4'; }
+function aiCacheKey() { return 'dashboard_ai_checkin_v5'; }
 function getAiCache() {
   try { return JSON.parse(localStorage.getItem(aiCacheKey()) || 'null'); } catch { return null; }
 }
 function setAiCache(text, meta = {}) {
+  // Only persist successful live AI — never cache the offline template as a “brief”.
+  if (meta.source !== 'ai' || !text) return;
   try {
     localStorage.setItem(aiCacheKey(), JSON.stringify({
       text,
       at: Date.now(),
-      source: meta.source || 'ai',
+      source: 'ai',
     }));
   } catch {}
 }
-function setCheckinStatus(msg) {
+function setCheckinStatus(msg, tone = '') {
   const el = document.getElementById('ai-status');
-  if (el) el.textContent = msg || '';
+  if (!el) return;
+  el.textContent = msg || '';
+  el.dataset.tone = tone || '';
 }
 
 function categoryTotals(txs) {
@@ -2833,8 +2840,10 @@ function buildCheckinDossier(txs) {
     .sort((a, b) => b.delta - a.delta)
     .slice(0, 10);
 
-  const budgetRows = (STATE.budgets || [])
-    .filter(b => b.name && !/month progress/i.test(b.name))
+  const rawBudgets = (STATE.budgets || []).filter(b => b.name && !/month progress/i.test(b.name));
+  const budgetedCatSet = new Set();
+  rawBudgets.forEach(b => (b.categories || []).forEach(c => budgetedCatSet.add(c)));
+  const budgetRows = rawBudgets
     .map(b => {
       const cats = b.categories || [];
       const matched = [];
@@ -2848,44 +2857,59 @@ function buildCheckinDossier(txs) {
           }
         });
       } else {
-        spent = exp;
+        // Catch-all bucket (often “Misc” / out-of-budget): txs whose category isn’t in any other budget.
+        expenses.forEach(t => {
+          const cat = t.category || 'Other';
+          if (!budgetedCatSet.has(cat)) {
+            spent += Math.abs(+t.amount || 0);
+            matched.push(mapTxShort(t));
+          }
+        });
       }
       const limit = +b.amount || 0;
       return {
         name: b.name,
         categories: cats,
+        catchAll: !cats.length,
         spent: Math.round(spent),
         limit: Math.round(limit),
         over: limit > 0 ? Math.max(0, Math.round(spent - limit)) : 0,
         pct: limit > 0 ? Math.round(spent / limit * 100) : null,
         sampleTx: matched
           .sort((a, b) => b.amount - a.amount)
-          .slice(0, 8),
+          .slice(0, 12),
       };
     })
     .sort((a, b) => (b.over - a.over) || (b.pct || 0) - (a.pct || 0));
 
-  const overBudgetCats = new Set(
-    budgetRows.filter(b => b.over > 0).flatMap(b => b.categories || [])
-  );
+  const overBudgetRows = budgetRows.filter(b => b.over > 0);
+  const overBudgetCats = new Set(overBudgetRows.flatMap(b => b.categories || []));
+  const overCatchAll = overBudgetRows.some(b => b.catchAll);
 
-  // Memos matter more than largest rent line — keep every labeled expense + over-budget cats.
+  // Memos + over-budget lines matter more than the single largest rent payment.
   const memoExpenses = expenses
     .filter(t => (t.memo || '').trim())
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
-    .slice(0, 40)
+    .slice(0, 50)
     .map(mapTxShort);
 
   const overBudgetExpenses = expenses
-    .filter(t => overBudgetCats.has(t.category))
+    .filter(t => overBudgetCats.has(t.category) || (overCatchAll && !budgetedCatSet.has(t.category || 'Other')))
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
-    .slice(0, 25)
+    .slice(0, 30)
     .map(mapTxShort);
 
   const topExpenses = expenses
     .slice()
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
-    .slice(0, 15)
+    .slice(0, 20)
+    .map(mapTxShort);
+
+  // Full-ish month feed so life events in mid-size categories are visible even without memos.
+  const allExpensesThisMonth = expenses
+    .slice()
+    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+    .slice(0, 45)
     .map(mapTxShort);
 
   const recentIncome = month.filter(isIncomeTx)
@@ -2927,6 +2951,7 @@ function buildCheckinDossier(txs) {
     topExpenses,
     memoExpenses,
     overBudgetExpenses,
+    allExpensesThisMonth,
     recentIncome,
     budgetRows,
     holdings,
@@ -3019,11 +3044,13 @@ function buildCheckinPrompt(ctx) {
     })),
     expensesWithMemos: ctx.memoExpenses,
     expensesInOverBudgetCategories: ctx.overBudgetExpenses,
+    allExpensesThisMonth: ctx.allExpensesThisMonth,
     largestExpenses: ctx.topExpenses,
     incomeThisMonth: ctx.recentIncome,
     budgets: ctx.budgetRows.map(b => ({
       name: b.name,
       categories: b.categories,
+      catchAll: b.catchAll,
       spent: b.spent,
       limit: b.limit,
       over: b.over,
@@ -3042,7 +3069,7 @@ function buildCheckinPrompt(ctx) {
     '- 2 short paragraphs of continuous prose (optional tiny third for the next step). NO bullets, NO numbered lists, NO headings, NO emoji.',
     '- Bold a few key € with **like this**.',
     '- Start from the wealth move he sees. Use wealthDecomposition: if portfolioMoveLikelyDominatesWealthChange is true, lead with mark-to-market / PEA as the main reason for the € change, then layer household life/spend as colour — do NOT pretend Leisure €200 caused a €1500+ NW drop.',
-    '- Read expensesWithMemos, expensesInOverBudgetCategories, and budgets[].sampleTx carefully. If labels/categories/budget names point to a life event (hosts, parents, travel, gifts, medical, one-offs, “out of budget”/Misc), say so naturally. Ground every personal claim in those strings — never invent hosts/people/events absent from the dossier.',
+    '- Read expensesWithMemos, expensesInOverBudgetCategories, allExpensesThisMonth, and budgets[].sampleTx carefully (including catchAll / Misc / out-of-budget buckets). If labels, categories, or budget names point to a life event, say so naturally. Ground every personal claim in those strings — never invent people or events absent from the dossier.',
     '- Use Google Search for recent equity/market or major news only when it helps explain a portfolio-dominated move between the baseline date and asOf (' + ctx.today + '). Prefer concrete market colour (indices, mega-cap/tech, rates, elections) over vague vibes. Do not moralize politics.',
     '- Empathize when the month was noisy; reinforce good habits (DCA, Livret floor). End with one concrete next move.',
     '- Not legal/tax advice. PEA net-after-5y = PS 17.2% on gain after five years.',
@@ -3054,16 +3081,34 @@ function buildCheckinPrompt(ctx) {
   ].join('\n');
 }
 
-async function callGeminiCheckin(apiKey, prompt, { withSearch = true } = {}) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+const GEMINI_CHECKIN_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-flash-latest',
+];
+
+function extractGeminiText(data) {
+  const parts = data?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) return '';
+  return parts.map(p => (typeof p?.text === 'string' ? p.text : '')).filter(Boolean).join('').trim();
+}
+
+async function callGeminiCheckin(apiKey, prompt, { withSearch = true, model } = {}) {
+  const modelId = model || GEMINI_CHECKIN_MODELS[0];
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`;
   const body = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.65, maxOutputTokens: 800 },
   };
-  if (withSearch) body.tools = [{ google_search: {} }];
+  // REST JSON uses camelCase googleSearch (snake_case is ignored / rejected).
+  if (withSearch) body.tools = [{ googleSearch: {} }];
+
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey,
+    },
     body: JSON.stringify(body),
   });
   const raw = await res.text();
@@ -3074,14 +3119,19 @@ async function callGeminiCheckin(apiKey, prompt, { withSearch = true } = {}) {
     const err = new Error(msg);
     err.status = res.status;
     err.body = data;
+    err.model = modelId;
     throw err;
   }
-  const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text).filter(Boolean).join('') || '';
-  if (!text.trim()) {
+  const text = extractGeminiText(data);
+  if (!text) {
     const block = data?.candidates?.[0]?.finishReason || data?.promptFeedback?.blockReason || 'empty';
-    throw new Error('empty response (' + block + ')');
+    const err = new Error('empty response (' + block + ')');
+    err.model = modelId;
+    throw err;
   }
-  return text.trim();
+  const grounded = !!(data?.candidates?.[0]?.groundingMetadata?.webSearchQueries?.length
+    || data?.candidates?.[0]?.groundingMetadata?.groundingChunks?.length);
+  return { text, model: modelId, grounded, data };
 }
 
 async function generateAiSummary(txs, force = false) {
@@ -3091,14 +3141,14 @@ async function generateAiSummary(txs, force = false) {
   const cached = getAiCache();
   if (!force && cached && cached.text && cached.source === 'ai' && (Date.now() - cached.at) < 86400000) {
     el.innerHTML = renderAiHtml(cached.text);
-    setCheckinStatus('Cached check-in · tap Refresh check-in for a new read');
+    setCheckinStatus('Cached live check-in · tap Refresh check-in for a new read', 'ok');
     return;
   }
   aiGenerating = true;
   const btn = document.getElementById('ai-refresh-btn');
   if (btn) { btn.textContent = 'Refreshing…'; btn.disabled = true; }
   el.innerHTML = `<span class="ai-loading">Reading your numbers + recent context…</span>`;
-  setCheckinStatus('');
+  setCheckinStatus('Calling Gemini…', 'warn');
 
   const ctx = buildCheckinDossier(txs);
   const local = localCheckinText(ctx);
@@ -3106,8 +3156,7 @@ async function generateAiSummary(txs, force = false) {
 
   const finishLocal = (why) => {
     el.innerHTML = renderAiHtml(local);
-    setAiCache(local, { source: 'offline' });
-    setCheckinStatus(why || 'Offline template — add a Gemini API key in Settings for the real check-in');
+    setCheckinStatus(why || 'Offline template — add a Gemini API key in Settings for the real check-in', 'bad');
   };
 
   if (!apiKey) {
@@ -3117,21 +3166,35 @@ async function generateAiSummary(txs, force = false) {
     return;
   }
 
+  const prompt = buildCheckinPrompt(ctx);
+  const errors = [];
+
   try {
-    let text;
-    try {
-      text = await callGeminiCheckin(apiKey, buildCheckinPrompt(ctx), { withSearch: true });
-      setCheckinStatus('Live AI · Google Search grounding on');
-    } catch (e1) {
-      // Some keys/models reject search tools — retry plain generation.
-      console.warn('Grounded Gemini failed, retrying plain:', e1.message);
-      text = await callGeminiCheckin(apiKey, buildCheckinPrompt(ctx), { withSearch: false });
-      setCheckinStatus('Live AI · search grounding unavailable, used model knowledge only');
+    let result = null;
+    // Prefer grounded search; fall back across models, then plain generation.
+    outer: for (const withSearch of [true, false]) {
+      for (const model of GEMINI_CHECKIN_MODELS) {
+        try {
+          result = await callGeminiCheckin(apiKey, prompt, { withSearch, model });
+          break outer;
+        } catch (e) {
+          errors.push(`${model}${withSearch ? '+search' : ''}: ${e.message}`);
+          console.warn('Gemini attempt failed:', model, withSearch, e.message);
+        }
+      }
     }
-    el.innerHTML = renderAiHtml(text);
-    setAiCache(text, { source: 'ai' });
+    if (!result) throw new Error(errors.slice(0, 3).join(' · ') || 'all attempts failed');
+
+    el.innerHTML = renderAiHtml(result.text);
+    setAiCache(result.text, { source: 'ai' });
+    setCheckinStatus(
+      result.grounded
+        ? `Live AI · ${result.model} · Google Search grounding on`
+        : `Live AI · ${result.model} · model knowledge (no search hits)`,
+      'ok'
+    );
   } catch (e) {
-    console.warn('Gemini check-in failed:', e.message);
+    console.warn('Gemini check-in failed:', e.message, errors);
     finishLocal('AI failed (' + (e.message || 'error') + ') — offline template below. Check key/quota in Settings.');
   }
   aiGenerating = false;
