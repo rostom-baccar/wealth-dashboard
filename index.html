@@ -259,6 +259,7 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .ai-brief b{color:var(--text)}
 .ai-brief p{margin:0 0 0.85em;color:rgba(238,243,248,.82)}
 .ai-brief p:last-child{margin-bottom:0}
+.ai-status{margin:12px 0 0;font-size:11px;color:var(--muted);line-height:1.4}
 .ai-loading{font-style:italic}
 .doing-pulse{
   display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px;
@@ -435,6 +436,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
         <button type="button" class="btn" id="ai-refresh-btn" onclick="forceAiRefresh()">Refresh check-in</button>
       </div>
       <div id="ai-body"><span class="ai-loading">Unlock to load your check-in…</span></div>
+      <p class="ai-status" id="ai-status"></p>
     </div>
   </section>
 
@@ -2755,12 +2757,22 @@ function renderAiHtml(text) {
   return parts.map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
 }
 
-function aiCacheKey() { return 'dashboard_ai_checkin_v3'; }
+function aiCacheKey() { return 'dashboard_ai_checkin_v4'; }
 function getAiCache() {
   try { return JSON.parse(localStorage.getItem(aiCacheKey()) || 'null'); } catch { return null; }
 }
-function setAiCache(text) {
-  try { localStorage.setItem(aiCacheKey(), JSON.stringify({ text, at: Date.now() })); } catch {}
+function setAiCache(text, meta = {}) {
+  try {
+    localStorage.setItem(aiCacheKey(), JSON.stringify({
+      text,
+      at: Date.now(),
+      source: meta.source || 'ai',
+    }));
+  } catch {}
+}
+function setCheckinStatus(msg) {
+  const el = document.getElementById('ai-status');
+  if (el) el.textContent = msg || '';
 }
 
 function categoryTotals(txs) {
@@ -2784,13 +2796,23 @@ function prevMonthBucket(txs) {
   );
 }
 
+function mapTxShort(t) {
+  return {
+    date: t.date.toISOString().slice(0, 10),
+    category: t.category || 'Other',
+    amount: Math.round(Math.abs(+t.amount || 0) * 100) / 100,
+    memo: (t.memo || '').trim(),
+  };
+}
+
 function buildCheckinDossier(txs) {
   const all = txs || [];
   const tax = peaNetAfter5y(STATE.pea, STATE.monthlyCostBasis);
   const heldYrs = yearsHeld(STATE.peaStartedAt);
   const month = monthBucket(all);
   const prev = prevMonthBucket(all);
-  const exp = month.filter(isExpenseTx).reduce((s, t) => s + Math.abs(t.amount), 0);
+  const expenses = month.filter(isExpenseTx);
+  const exp = expenses.reduce((s, t) => s + Math.abs(t.amount), 0);
   const inc = month.filter(isIncomeTx).reduce((s, t) => s + Math.abs(+t.amount || 0), 0);
   const prevExp = prev.filter(isExpenseTx).reduce((s, t) => s + Math.abs(t.amount), 0);
   const prevInc = prev.filter(isIncomeTx).reduce((s, t) => s + Math.abs(+t.amount || 0), 0);
@@ -2798,49 +2820,32 @@ function buildCheckinDossier(txs) {
   const boosts = computeBoosts(all);
   const hero = boosts.hero && !boosts.hero.pending ? boosts.hero : null;
   const livretGap = Math.max(0, LIVRET_TARGET - (STATE.livretA || 0));
+  const saved = inc - exp;
 
   const catNow = categoryTotals(month);
   const catPrevMap = Object.fromEntries(categoryTotals(prev).map(c => [c.name, c.amount]));
   const unusualCats = catNow.map(c => {
     const prevAmt = catPrevMap[c.name] || 0;
     const delta = c.amount - prevAmt;
-    const ratio = prevAmt > 0 ? c.amount / prevAmt : (c.amount > 40 ? 99 : 1);
+    const ratio = prevAmt > 0 ? c.amount / prevAmt : (c.amount > 25 ? 99 : 1);
     return { ...c, prevAmt, delta, ratio };
-  }).filter(c => c.amount >= 40 && (c.ratio >= 1.6 || c.delta >= 80 || !catPrevMap[c.name]))
+  }).filter(c => c.amount >= 25 && (c.ratio >= 1.35 || c.delta >= 50 || !catPrevMap[c.name]))
     .sort((a, b) => b.delta - a.delta)
-    .slice(0, 8);
-
-  const topExpenses = month.filter(isExpenseTx)
-    .slice()
-    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
-    .slice(0, 18)
-    .map(t => ({
-      date: t.date.toISOString().slice(0, 10),
-      category: t.category || 'Other',
-      amount: Math.round(Math.abs(+t.amount || 0) * 100) / 100,
-      memo: (t.memo || '').trim(),
-    }));
-
-  const recentIncome = month.filter(isIncomeTx)
-    .slice()
-    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
-    .slice(0, 10)
-    .map(t => ({
-      date: t.date.toISOString().slice(0, 10),
-      category: t.category || 'Income',
-      amount: Math.round(Math.abs(+t.amount || 0) * 100) / 100,
-      memo: (t.memo || '').trim(),
-    }));
+    .slice(0, 10);
 
   const budgetRows = (STATE.budgets || [])
     .filter(b => b.name && !/month progress/i.test(b.name))
     .map(b => {
       const cats = b.categories || [];
+      const matched = [];
       let spent = 0;
       if (cats.length) {
         const set = new Set(cats);
-        month.filter(isExpenseTx).forEach(t => {
-          if (set.has(t.category)) spent += Math.abs(+t.amount || 0);
+        expenses.forEach(t => {
+          if (set.has(t.category)) {
+            spent += Math.abs(+t.amount || 0);
+            matched.push(mapTxShort(t));
+          }
         });
       } else {
         spent = exp;
@@ -2853,9 +2858,41 @@ function buildCheckinDossier(txs) {
         limit: Math.round(limit),
         over: limit > 0 ? Math.max(0, Math.round(spent - limit)) : 0,
         pct: limit > 0 ? Math.round(spent / limit * 100) : null,
+        sampleTx: matched
+          .sort((a, b) => b.amount - a.amount)
+          .slice(0, 8),
       };
     })
     .sort((a, b) => (b.over - a.over) || (b.pct || 0) - (a.pct || 0));
+
+  const overBudgetCats = new Set(
+    budgetRows.filter(b => b.over > 0).flatMap(b => b.categories || [])
+  );
+
+  // Memos matter more than largest rent line — keep every labeled expense + over-budget cats.
+  const memoExpenses = expenses
+    .filter(t => (t.memo || '').trim())
+    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+    .slice(0, 40)
+    .map(mapTxShort);
+
+  const overBudgetExpenses = expenses
+    .filter(t => overBudgetCats.has(t.category))
+    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+    .slice(0, 25)
+    .map(mapTxShort);
+
+  const topExpenses = expenses
+    .slice()
+    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+    .slice(0, 15)
+    .map(mapTxShort);
+
+  const recentIncome = month.filter(isIncomeTx)
+    .slice()
+    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+    .slice(0, 10)
+    .map(mapTxShort);
 
   const holdings = (STATE.peaAlloc || []).map(h => {
     const value = +h.value || 0, shares = +h.shares || 0, pxCost = +h.costBasis || 0;
@@ -2875,17 +2912,39 @@ function buildCheckinDossier(txs) {
     balance: Math.round(w.balance),
   }));
 
+  const wealthDelta = hero ? hero.amount : null;
+  const residualVsCashflow = wealthDelta != null ? Math.round(wealthDelta - saved) : null;
+  const portfolioLikelyDominant = wealthDelta != null
+    && Math.abs(wealthDelta) >= Math.max(250, Math.abs(saved) * 1.25)
+    && Math.abs(residualVsCashflow) >= Math.abs(saved);
+
   return {
     today: new Date().toISOString().slice(0, 10),
     heroVsMode,
     tax, heldYrs, exp, inc, prevExp, prevInc, pace, hero, livretGap, boosts,
-    catNow: catNow.slice(0, 12),
+    catNow: catNow.slice(0, 14),
     unusualCats,
     topExpenses,
+    memoExpenses,
+    overBudgetExpenses,
     recentIncome,
     budgetRows,
     holdings,
     livretWd,
+    wealthDecomposition: {
+      wealthDeltaEur: wealthDelta != null ? Math.round(wealthDelta) : null,
+      wealthDeltaPct: hero && hero.pct != null ? +hero.pct.toFixed(2) : null,
+      vs: hero?.baseline?.label || null,
+      baselineWhen: hero?.baseline?.when || null,
+      householdNetThisMonthEur: Math.round(saved),
+      incomeThisMonthEur: Math.round(inc),
+      spendThisMonthEur: Math.round(exp),
+      residualLikelyMarkToMarketOrOtherEur: residualVsCashflow,
+      portfolioMoveLikelyDominatesWealthChange: portfolioLikelyDominant,
+      reading: portfolioLikelyDominant
+        ? 'Wealth move is larger than household net this month — PEA/market mark-to-market (or account revaluation) is likely the main driver; spend is secondary colour.'
+        : 'Household cashflow may explain a meaningful share of the wealth move; still check PEA marks.',
+    },
     accounts: {
       netWorth: Math.round(netWorth()),
       pea: Math.round(STATE.pea || 0),
@@ -2909,38 +2968,43 @@ function buildCheckinDossier(txs) {
 function localCheckinText(ctx) {
   const nw = ctx.accounts.netWorth;
   const hero = ctx.hero;
+  const decomp = ctx.wealthDecomposition;
   const open = hero
     ? (hero.amount < 0
-      ? `You're down **${fmtDelta(hero.amount, hero.pct)}** vs ${hero.baseline?.label || 'last period'}${hero.baseline?.when ? ` (${hero.baseline.when})` : ''}, with net worth at **${fmt(nw)}**.`
-      : `You're up **${fmtDelta(hero.amount, hero.pct)}** vs ${hero.baseline?.label || 'last period'}${hero.baseline?.when ? ` (${hero.baseline.when})` : ''}, sitting at **${fmt(nw)}**.`)
+      ? `You're down **${fmtDelta(hero.amount, hero.pct)}** vs ${hero.baseline?.label || 'last period'}${hero.baseline?.when ? ` (${hero.baseline.when})` : ''}, at **${fmt(nw)}**.`
+      : `You're up **${fmtDelta(hero.amount, hero.pct)}** vs ${hero.baseline?.label || 'last period'}${hero.baseline?.when ? ` (${hero.baseline.when})` : ''}, at **${fmt(nw)}**.`)
     : `Net worth is **${fmt(nw)}** — still building a clean comparison baseline.`;
 
-  const spendBit = ctx.unusualCats.length
-    ? ` Spend-wise, the standouts this month are ${ctx.unusualCats.slice(0, 3).map(c => `**${c.name}** (${fmt(c.amount)})`).join(', ')}` +
-      (ctx.topExpenses[0]?.memo ? `, including notes like “${ctx.topExpenses[0].memo}”` : '') + '.'
-    : ` This month you're at **${fmt(ctx.inc)}** in and **${fmt(ctx.exp)}** out.`;
+  const marketBit = decomp.portfolioMoveLikelyDominatesWealthChange
+    ? ` Most of that move (~**${fmt(Math.abs(decomp.residualLikelyMarkToMarketOrOtherEur || 0))}** after accounting for this month’s **${fmt(decomp.householdNetThisMonthEur)}** household net) looks like PEA/market mark-to-market rather than day-to-day spend.`
+    : ` This month’s household net is **${fmt(decomp.householdNetThisMonthEur)}** (**${fmt(ctx.inc)}** in / **${fmt(ctx.exp)}** out).`;
 
-  const over = ctx.budgetRows.filter(b => b.over > 0).slice(0, 2);
-  const budgetBit = over.length
-    ? ` Budgets already flag pressure in ${over.map(b => `**${b.name}** (+${fmt(b.over)} over)`).join(' and ')}.`
+  const memoHits = (ctx.memoExpenses || []).filter(t => t.memo).slice(0, 4);
+  const over = ctx.budgetRows.filter(b => b.over > 0).slice(0, 3);
+  const lifeBit = (memoHits.length || over.length)
+    ? ` On the personal side, ${[
+        memoHits.length ? `labeled spends include ${memoHits.map(t => `“${t.memo}” (${fmt(t.amount)} · ${t.category})`).join('; ')}` : null,
+        over.length ? `budgets show pressure in ${over.map(b => `**${b.name}** (+${fmt(b.over)})`).join(', ')}` : null,
+      ].filter(Boolean).join(', and ')}.`
     : '';
 
   const keep = ctx.livretGap > 0
     ? ` Keep the ~${fmt(ctx.accounts.peaMonthly)}/mo PEA habit, and top Livret toward the €8k floor before sending extra staging over.`
     : ` Keep the ~${fmt(ctx.accounts.peaMonthly)}/mo PEA habit and let month-end staging roll into the PEA while Livret stays at the floor.`;
 
-  return `${open}${spendBit}${budgetBit}\n\nMarkets and one-off life costs can both move the number — use the spend trail above as the personal explanation, and treat PEA marks as noise unless the DCA broke. **Next:**${keep}`;
+  return `${open}${marketBit}${lifeBit}\n\nThis is the offline fallback (Gemini didn’t run). **Next:**${keep}`;
 }
 
 function buildCheckinPrompt(ctx) {
   const hero = ctx.hero;
   const wealthLine = hero
-    ? `HE IS CURRENTLY SEEING: wealth ${hero.amount >= 0 ? 'UP' : 'DOWN'} by ${Math.round(hero.amount)} EUR (${hero.pct != null ? hero.pct.toFixed(1) + '%' : 'n/a'}) versus ${hero.baseline?.label || 'prior'}${hero.baseline?.when ? ' (baseline date ' + hero.baseline.when + ')' : ''}. Comparison mode: ${ctx.heroVsMode}.`
-    : 'Wealth comparison baseline is incomplete.';
+    ? `HE IS CURRENTLY SEEING on screen: wealth ${hero.amount >= 0 ? 'UP' : 'DOWN'} by ${Math.round(hero.amount)} EUR (${hero.pct != null ? hero.pct.toFixed(1) + '%' : 'n/a'}) versus ${hero.baseline?.label || 'prior'}${hero.baseline?.when ? ' (baseline ' + hero.baseline.when + ')' : ''}. Mode=${ctx.heroVsMode}.`
+    : 'Wealth comparison baseline incomplete.';
 
   const dossier = {
     asOf: ctx.today,
     viewerHeadline: wealthLine,
+    wealthDecomposition: ctx.wealthDecomposition,
     accounts: ctx.accounts,
     cashflowThisMonth: { income: Math.round(ctx.inc), spend: Math.round(ctx.exp), saved: Math.round(ctx.inc - ctx.exp) },
     cashflowLastMonth: { income: Math.round(ctx.prevInc), spend: Math.round(ctx.prevExp), saved: Math.round(ctx.prevInc - ctx.prevExp) },
@@ -2953,31 +3017,71 @@ function buildCheckinPrompt(ctx) {
       lastMonthEur: Math.round(c.prevAmt),
       deltaEur: Math.round(c.delta),
     })),
-    topExpensesThisMonth: ctx.topExpenses,
+    expensesWithMemos: ctx.memoExpenses,
+    expensesInOverBudgetCategories: ctx.overBudgetExpenses,
+    largestExpenses: ctx.topExpenses,
     incomeThisMonth: ctx.recentIncome,
-    budgets: ctx.budgetRows,
+    budgets: ctx.budgetRows.map(b => ({
+      name: b.name,
+      categories: b.categories,
+      spent: b.spent,
+      limit: b.limit,
+      over: b.over,
+      pct: b.pct,
+      sampleTx: b.sampleTx,
+    })),
     peaHoldings: ctx.holdings,
     recentLivretWithdrawals: ctx.livretWd,
-    moneySystem: 'EOM Bourso LDDS staging → PEA; Livret A is emergency buffer floor €8000; LCL LDDS is NOT on this dashboard (known spends/IOUs).',
+    moneySystem: 'EOM Bourso LDDS staging → PEA; Livret A buffer floor €8000; LCL LDDS off-dashboard.',
   };
 
   return [
-    'You are Rostom’s personal wealth check-in writer. Speak like a thoughtful friend who actually looked at his numbers — warm, specific, adult. Not a coach bot, not a bank app.',
+    'You are Rostom’s personal wealth check-in writer — a thoughtful friend who inspected his dossier and, when useful, recent public market/news context. Warm, specific, adult. Not a coach bot.',
     '',
-    'OUTPUT RULES (strict):',
-    '- Write 2 short paragraphs of continuous prose (optionally a tiny third for the next step). NO bullet points, NO numbered lists, NO headings, NO emoji.',
-    '- Bold a few key € amounts with **like this**.',
-    '- Open by acknowledging the wealth move he can see in the hero (especially if negative) — explain what likely drove it using HIS data first.',
-    '- Connect the dots: unusual categories, memos, over-budget lines, income blips, Livret withdrawals, PEA mark-to-market / holdings gains or losses, staging pot.',
-    '- If memos/categories suggest a life event (travel, parents, gifts, medical, one-offs), say so naturally — infer only from the dossier, never invent people or events that aren’t grounded in category/memo/budget names.',
-    '- You may briefly weave in real-world market or news context (equities, rates, big tech, elections, geopolitics) ONLY when it plausibly relates to PEA/ETF moves around today (' + ctx.today + '). If unsure, stay on his household numbers. Do not lecture about politics.',
-    '- Empathize when a month was hard or noisy; celebrate discipline when DCA/buffer held. End with one concrete, kind next move (habit-level, not product pitch).',
-    '- Not legal/tax advice. PEA “net after 5y” means PS 17.2% on gain after five years.',
-    '- Do not restate the whole dossier. Pick the 2–4 signals that actually explain the story.',
+    'OUTPUT (strict):',
+    '- 2 short paragraphs of continuous prose (optional tiny third for the next step). NO bullets, NO numbered lists, NO headings, NO emoji.',
+    '- Bold a few key € with **like this**.',
+    '- Start from the wealth move he sees. Use wealthDecomposition: if portfolioMoveLikelyDominatesWealthChange is true, lead with mark-to-market / PEA as the main reason for the € change, then layer household life/spend as colour — do NOT pretend Leisure €200 caused a €1500+ NW drop.',
+    '- Read expensesWithMemos, expensesInOverBudgetCategories, and budgets[].sampleTx carefully. If labels/categories/budget names point to a life event (hosts, parents, travel, gifts, medical, one-offs, “out of budget”/Misc), say so naturally. Ground every personal claim in those strings — never invent hosts/people/events absent from the dossier.',
+    '- Use Google Search for recent equity/market or major news only when it helps explain a portfolio-dominated move between the baseline date and asOf (' + ctx.today + '). Prefer concrete market colour (indices, mega-cap/tech, rates, elections) over vague vibes. Do not moralize politics.',
+    '- Empathize when the month was noisy; reinforce good habits (DCA, Livret floor). End with one concrete next move.',
+    '- Not legal/tax advice. PEA net-after-5y = PS 17.2% on gain after five years.',
     '',
-    'PRIVATE DOSSIER (facts only — analyze, don’t dump):',
+    wealthLine,
+    '',
+    'PRIVATE DOSSIER JSON:',
     JSON.stringify(dossier),
   ].join('\n');
+}
+
+async function callGeminiCheckin(apiKey, prompt, { withSearch = true } = {}) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const body = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.65, maxOutputTokens: 800 },
+  };
+  if (withSearch) body.tools = [{ google_search: {} }];
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const raw = await res.text();
+  let data = null;
+  try { data = JSON.parse(raw); } catch (_) {}
+  if (!res.ok) {
+    const msg = data?.error?.message || ('Gemini HTTP ' + res.status);
+    const err = new Error(msg);
+    err.status = res.status;
+    err.body = data;
+    throw err;
+  }
+  const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text).filter(Boolean).join('') || '';
+  if (!text.trim()) {
+    const block = data?.candidates?.[0]?.finishReason || data?.promptFeedback?.blockReason || 'empty';
+    throw new Error('empty response (' + block + ')');
+  }
+  return text.trim();
 }
 
 async function generateAiSummary(txs, force = false) {
@@ -2985,47 +3089,50 @@ async function generateAiSummary(txs, force = false) {
   const el = document.getElementById('ai-body');
   if (!el) return;
   const cached = getAiCache();
-  if (!force && cached && cached.text && (Date.now() - cached.at) < 86400000) {
+  if (!force && cached && cached.text && cached.source === 'ai' && (Date.now() - cached.at) < 86400000) {
     el.innerHTML = renderAiHtml(cached.text);
+    setCheckinStatus('Cached check-in · tap Refresh check-in for a new read');
     return;
   }
   aiGenerating = true;
   const btn = document.getElementById('ai-refresh-btn');
   if (btn) { btn.textContent = 'Refreshing…'; btn.disabled = true; }
-  el.innerHTML = `<span class="ai-loading">Reading your numbers…</span>`;
+  el.innerHTML = `<span class="ai-loading">Reading your numbers + recent context…</span>`;
+  setCheckinStatus('');
 
   const ctx = buildCheckinDossier(txs);
   const local = localCheckinText(ctx);
   const apiKey = (localStorage.getItem(LS_GEMINI) || '').trim();
-  const finishLocal = () => { el.innerHTML = renderAiHtml(local); setAiCache(local); };
+
+  const finishLocal = (why) => {
+    el.innerHTML = renderAiHtml(local);
+    setAiCache(local, { source: 'offline' });
+    setCheckinStatus(why || 'Offline template — add a Gemini API key in Settings for the real check-in');
+  };
 
   if (!apiKey) {
-    finishLocal();
+    finishLocal('No Gemini API key in Settings — showing offline template only');
     aiGenerating = false;
     if (btn) { btn.textContent = 'Refresh check-in'; btn.disabled = false; }
     return;
   }
 
   try {
-    const prompt = buildCheckinPrompt(ctx);
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 700 },
-      }),
-    });
-    if (!res.ok) throw new Error('Gemini HTTP ' + res.status);
-    const data = await res.json();
-    const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
-    if (!text.trim()) throw new Error('empty');
-    el.innerHTML = renderAiHtml(text.trim());
-    setAiCache(text.trim());
+    let text;
+    try {
+      text = await callGeminiCheckin(apiKey, buildCheckinPrompt(ctx), { withSearch: true });
+      setCheckinStatus('Live AI · Google Search grounding on');
+    } catch (e1) {
+      // Some keys/models reject search tools — retry plain generation.
+      console.warn('Grounded Gemini failed, retrying plain:', e1.message);
+      text = await callGeminiCheckin(apiKey, buildCheckinPrompt(ctx), { withSearch: false });
+      setCheckinStatus('Live AI · search grounding unavailable, used model knowledge only');
+    }
+    el.innerHTML = renderAiHtml(text);
+    setAiCache(text, { source: 'ai' });
   } catch (e) {
     console.warn('Gemini check-in failed:', e.message);
-    finishLocal();
+    finishLocal('AI failed (' + (e.message || 'error') + ') — offline template below. Check key/quota in Settings.');
   }
   aiGenerating = false;
   if (btn) { btn.textContent = 'Refresh check-in'; btn.disabled = false; }
