@@ -768,14 +768,24 @@ function fmt2(v) {
 function fmtAxis(v) { return anonMode ? '•••' : fmt(v); }
 function fmtTip(label, v) { return anonMode ? '•••' : (label ? label + ': ' + fmt(v) : fmt(v)); }
 
-/** Wallet exports dates like "11/01/2026, 14:01" — avoid ambiguous Date.parse / UTC day shifts. */
+/** Wallet/PDF dates — keep calendar days in local time (no UTC day shifts). */
 function parseWalletDate(raw) {
   if (raw instanceof Date) return isNaN(+raw) ? null : raw;
   const s = String(raw || '').trim();
   if (!s) return null;
+  // "11/01/2026, 14:01" (Wallet Manager)
   const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
   if (m) {
     return new Date(+m[3], +m[1] - 1, +m[2], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+  }
+  // "2025-12-16" or "2025-12-16T12:00:00Z" — date-only as local calendar day
+  const isoDay = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[Tt ].*)?$/);
+  if (isoDay) {
+    const time = s.match(/[Tt ](\d{2}):(\d{2})(?::(\d{2}))?/);
+    return new Date(
+      +isoDay[1], +isoDay[2] - 1, +isoDay[3],
+      time ? +time[1] : 0, time ? +time[2] : 0, time ? +(time[3] || 0) : 0
+    );
   }
   const iso = new Date(s);
   return isNaN(+iso) ? null : iso;
@@ -784,6 +794,9 @@ function localDayStr(d) {
   const x = d instanceof Date ? d : parseWalletDate(d);
   if (!x || isNaN(+x)) return '';
   return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
+}
+function clearAiCache() {
+  try { localStorage.removeItem(aiCacheKey()); } catch (_) {}
 }
 
 function onAnonToggle() {
@@ -2106,8 +2119,8 @@ function wealthHistorySeries() {
   let funded = 0;
   (STATE.peaContributions || [])
     .filter(c => c.date && c.amount != null)
-    .map(c => ({ date: new Date(c.date), amount: +c.amount }))
-    .filter(c => !isNaN(+c.date))
+    .map(c => ({ date: parseWalletDate(c.date), amount: +c.amount }))
+    .filter(c => c.date && !isNaN(+c.date))
     .sort((a, b) => a.date - b.date)
     .forEach(c => {
       funded += c.amount;
@@ -2373,8 +2386,8 @@ function drawLivretProjection() {
 function buildContributionSeries() {
   const contribs = (STATE.peaContributions || [])
     .filter(c => c.date && c.amount != null)
-    .map(c => ({ date: new Date(c.date), amount: +c.amount, label: c.label || '' }))
-    .filter(c => !isNaN(+c.date))
+    .map(c => ({ date: parseWalletDate(c.date), amount: +c.amount, label: c.label || '' }))
+    .filter(c => c.date && !isNaN(+c.date))
     .sort((a, b) => a.date - b.date);
   let cum = 0;
   const points = contribs.map(c => {
@@ -2748,6 +2761,8 @@ async function refreshAll() {
     STATE.snapshotSource = 'apps-script-live';
     STATE.driveOk = true;
   await fetchSavings();
+  // Wallet data changed — don't keep a check-in written against the old ledger.
+  clearAiCache();
   renderAll(STATE.transactions);
     // Snapshot NW after a successful Refresh so the next visit can show “up by X% vs last check”
     commitNwCheckpoint(netWorth(), true);
@@ -2779,7 +2794,7 @@ function renderAiHtml(text) {
   return parts.map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
 }
 
-function aiCacheKey() { return 'dashboard_ai_checkin_v7'; }
+function aiCacheKey() { return 'dashboard_ai_checkin_v8'; }
 function getAiCache() {
   try { return JSON.parse(localStorage.getItem(aiCacheKey()) || 'null'); } catch { return null; }
 }
@@ -3014,7 +3029,7 @@ function buildCheckinDossier(txs) {
     && Math.abs(residualVsCashflow) >= Math.abs(saved);
 
   return {
-    today: new Date().toISOString().slice(0, 10),
+    today: localDayStr(new Date()),
     heroVsMode,
     tax, heldYrs, exp, inc, prevExp, prevInc, pace, hero, livretGap, boosts,
     catNow: catNow.slice(0, 14),
