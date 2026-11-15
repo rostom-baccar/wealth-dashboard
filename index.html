@@ -180,6 +180,12 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .cat-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
 .cat-track{height:4px;background:rgba(255,255,255,.06);border-radius:99px;overflow:hidden}
 .cat-fill{height:100%;background:linear-gradient(90deg,var(--aegean-deep),var(--aegean));border-radius:99px}
+.budget-track{display:flex;height:7px;gap:0}
+.budget-track .cat-fill{border-radius:0;flex-shrink:0}
+.budget-track .cat-fill:first-child{border-radius:99px 0 0 99px}
+.budget-track .cat-fill:last-child{border-radius:0 99px 99px 0}
+.budget-track .cat-fill:only-child{border-radius:99px}
+.cat-fill-excess{background:linear-gradient(90deg,#c44a4a,#f07171)!important}
 .cat-amt{text-align:right;font-family:var(--mono);font-size:12px}
 .inc-breakdown{display:flex;flex-wrap:wrap;gap:8px}
 .inc-chip{
@@ -277,7 +283,7 @@ body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
 .budget-row{margin:12px 0 16px}
 .budget-head{display:flex;justify-content:space-between;gap:10px;font-size:13px;font-weight:600;margin-bottom:6px}
 .budget-cats{font-size:11px;color:var(--muted);margin-top:6px}
-.cat-fill.over{background:linear-gradient(90deg,#8b3a3a,var(--bad))}
+.budget-over{font-size:11px;color:var(--bad);font-weight:600;margin-top:4px}
 .hold-row{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
 .hold-nums{text-align:right}
 .hold-nums strong{display:block;font-family:var(--mono);font-size:16px}
@@ -416,7 +422,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
     <h3>Settings</h3>
     <p class="hint">PEA, Livret A and cost basis come from Finary (via sync). PEE and Bourso LDDS are manual here.</p>
     <div id="modal-auto-block" class="finary-box" style="display:none"><div id="modal-auto-summary"></div></div>
-    <div id="modal-finary-waiting" class="finary-wait" style="display:none">No Finary balances yet. Ask Cursor to sync, then Refresh.</div>
+    <div id="modal-finary-waiting" class="finary-wait" style="display:none">No Finary balances on Drive yet. Refresh merges Drive’s finary-balances.json (updated when a sync writes it).</div>
     <label for="modal-pee">PEE (Epsor) €</label>
     <input id="modal-pee" type="number" step="0.01">
     <label for="modal-ldds">Bourso LDDS staging €</label>
@@ -892,7 +898,7 @@ function renderHero() {
   document.getElementById('hero-support').textContent =
     STATE.pea
       ? `PEA ${fmt(STATE.pea)} gross → ~${fmt(tax.net)} net after 5 years (PS 17.2% on ${fmt(tax.gain)} gain; capital untaxed). ${yearsLeft > 0.05 ? `${yearsLeft.toFixed(1)}y left to that mark.` : 'Already past 5 years.'} ${ageTxt}.`
-      : `${ageTxt}. Ask Cursor to sync Finary if empty.`;
+      : `${ageTxt}. Hit Refresh after Drive has a finary-balances.json.`;
 
   const bits = [
     ['PEA', STATE.pea],
@@ -1097,7 +1103,7 @@ function renderBudgets(txs) {
   if (!el) return;
   const budgets = (STATE.budgets || []).filter(b => b.name && !/month progress/i.test(b.name));
   if (!budgets.length) {
-    el.innerHTML = '<p class="muted">No budgets yet. Redeploy Apps Script (includes budget tables) then Refresh — or ask Cursor to sync.</p>';
+    el.innerHTML = '<p class="muted">No budgets in this snapshot yet. Redeploy the latest WalletExport.gs web app, upload a fresh wallet-database to Drive, then hit Refresh.</p>';
     return;
   }
   const month = monthBucket(txs || []);
@@ -1112,9 +1118,23 @@ function renderBudgets(txs) {
     if (cats.length) cats.forEach(c => { spent += spentByCat[c] || 0; });
     else spent = month.filter(isExpenseTx).reduce((s, t) => s + Math.abs(t.amount), 0);
     const limit = +b.amount || 0;
-    const pct = limit > 0 ? Math.min(100, Math.round(spent / limit * 100)) : 0;
-    const over = spent > limit && limit > 0;
-    return `<div class="budget-row"><div class="budget-head"><span>${b.name}</span><span class="blur-val ${over ? 'neg' : ''}">${fmt(spent)} / ${fmt(limit)}</span></div><div class="cat-track"><div class="cat-fill${over ? ' over' : ''}" style="width:${pct}%"></div></div><div class="budget-cats">${cats.length ? cats.join(' · ') : 'all expenses'}</div></div>`;
+    const overAmt = limit > 0 ? Math.max(0, spent - limit) : 0;
+    const over = overAmt > 0;
+    let barHtml;
+    if (over) {
+      // Full bar = spent. Within-limit share + excess share (saturated).
+      const okPct = Math.round(limit / spent * 100);
+      const excessPct = Math.max(0, 100 - okPct);
+      barHtml = `<div class="cat-track budget-track">
+        <div class="cat-fill" style="width:${okPct}%"></div>
+        <div class="cat-fill cat-fill-excess" style="width:${excessPct}%"></div>
+      </div>
+      <div class="budget-over blur-val">+${fmt(overAmt)} over</div>`;
+    } else {
+      const pct = limit > 0 ? Math.min(100, Math.round(spent / limit * 100)) : 0;
+      barHtml = `<div class="cat-track budget-track"><div class="cat-fill" style="width:${pct}%"></div></div>`;
+    }
+    return `<div class="budget-row"><div class="budget-head"><span>${b.name}</span><span class="blur-val ${over ? 'neg' : ''}">${fmt(spent)} / ${fmt(limit)}</span></div>${barHtml}<div class="budget-cats">${cats.length ? cats.join(' · ') : 'all expenses'}</div></div>`;
   }).join('');
 }
 function renderPeaHoldings() {
@@ -1420,7 +1440,7 @@ async function refreshAll() {
     return;
   }
 
-  if (status) status.innerHTML = `<span class="pill pill-load">Rebuilding from Drive + Finary…</span>`;
+  if (status) status.innerHTML = `<span class="pill pill-load">Refreshing wallet + budgets + Drive balances…</span>`;
   try {
     const data = await fetchLiveSnapshotFromAppsScript();
     applySnapshotData(data);
@@ -1428,16 +1448,19 @@ async function refreshAll() {
     STATE.driveOk = true;
     await fetchSavings();
     renderAll(STATE.transactions);
+    const nBud = (STATE.budgets || []).length;
     if (status) status.innerHTML = [
-      `<span class="pill pill-ok">Live sync ✓</span>`,
-      `<span class="pill ${STATE.finaryOk ? 'pill-ok' : 'pill-err'}">${STATE.finaryOk ? 'Finary ✓' : 'Finary ✗'}</span>`,
+      `<span class="pill pill-ok">Refresh ✓</span>`,
+      `<span class="pill ${STATE.finaryOk ? 'pill-ok' : 'pill-err'}">${STATE.finaryOk ? 'Balances ✓' : 'Balances ✗'}</span>`,
+      `<span class="pill ${STATE.savingsOk ? 'pill-ok' : 'pill-err'}">${STATE.savingsOk ? 'Wallet ✓' : 'Wallet ✗'}</span>`,
+      nBud ? `<span class="pill pill-ok">${nBud} budgets</span>` : `<span class="pill pill-err">0 budgets</span>`,
       `<span class="pill">${STATE.transactions.length} tx</span>`,
     ].join('');
     generateAiSummary(STATE.transactions, true).catch(() => {});
   } catch (e) {
     const msg = e.message || String(e);
     console.warn('Live refresh failed:', msg);
-    if (status) status.innerHTML = `<span class="pill pill-err" title="${msg.replace(/"/g, '&quot;')}">Live sync failed: ${msg}</span>`;
+    if (status) status.innerHTML = `<span class="pill pill-err" title="${msg.replace(/"/g, '&quot;')}">Refresh failed: ${msg}</span>`;
   }
   if (btn) btn.classList.remove('refreshing');
   if (icon) { icon.className = ''; icon.textContent = '↻'; }

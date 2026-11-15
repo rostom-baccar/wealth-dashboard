@@ -12,11 +12,13 @@ The **Refresh** button rebuilds data from Drive via Apps Script. It does **not**
 4. Copy the `/exec` URL.
 5. Unlock the dashboard → **⚙️ Settings** → paste into **Apps Script web app URL** → Save.
 
-## What Refresh does
+## What Refresh does (one click — no Cursor required)
 
 1. Calls the web app with `full=1` (JSONP).
-2. Apps Script reads Drive `wallet-database` (SQLite), rebuilds transactions, merges `finary-balances.json`, writes `wallet-snapshot.json`.
-3. Returns the full snapshot to the browser → dashboard updates.
+2. Apps Script reads Drive `wallet-database` (SQLite), rebuilds **transactions + budgets**, merges `finary-balances.json`, writes `wallet-snapshot.json`.
+3. Returns the full snapshot to the browser → dashboard updates (Spend budgets, PEA, Livret, etc.).
+
+The browser **cannot** log into Finary. Refresh uses whatever balances are already in Drive’s `finary-balances.json`. Keep that file reasonably fresh (Cursor sync, or a scheduled automation later). Wallet + budgets only need the sqlite on Drive + this Refresh.
 
 ## Cursor sync path (Phase 1 alternative)
 
