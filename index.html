@@ -768,6 +768,24 @@ function fmt2(v) {
 function fmtAxis(v) { return anonMode ? '•••' : fmt(v); }
 function fmtTip(label, v) { return anonMode ? '•••' : (label ? label + ': ' + fmt(v) : fmt(v)); }
 
+/** Wallet exports dates like "11/01/2026, 14:01" — avoid ambiguous Date.parse / UTC day shifts. */
+function parseWalletDate(raw) {
+  if (raw instanceof Date) return isNaN(+raw) ? null : raw;
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (m) {
+    return new Date(+m[3], +m[1] - 1, +m[2], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+  }
+  const iso = new Date(s);
+  return isNaN(+iso) ? null : iso;
+}
+function localDayStr(d) {
+  const x = d instanceof Date ? d : parseWalletDate(d);
+  if (!x || isNaN(+x)) return '';
+  return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
+}
+
 function onAnonToggle() {
   anonMode = document.getElementById('tog-anon').checked;
   document.body.classList.toggle('anon', anonMode);
@@ -972,9 +990,9 @@ function loadBalancesFromStorage() {
 function applySnapshotData(data) {
   if (!data || !Array.isArray(data.transactions)) throw new Error('Invalid snapshot JSON');
   STATE.transactions = data.transactions.map(t => ({
-      date: new Date(t.date), type: t.type, category: t.category,
+      date: parseWalletDate(t.date), type: t.type, category: t.category,
       amount: parseFloat(t.amount), memo: t.memo || '',
-    })).filter(t => !isNaN(t.date) && !isNaN(t.amount))
+    })).filter(t => t.date && !isNaN(+t.date) && !isNaN(t.amount))
       .sort((a, b) => b.date - a.date);
     STATE.driveOk = true;
   STATE.lastSnapshotSync = data.lastSync || data.servedAt || null;
@@ -2761,7 +2779,7 @@ function renderAiHtml(text) {
   return parts.map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
 }
 
-function aiCacheKey() { return 'dashboard_ai_checkin_v6'; }
+function aiCacheKey() { return 'dashboard_ai_checkin_v7'; }
 function getAiCache() {
   try { return JSON.parse(localStorage.getItem(aiCacheKey()) || 'null'); } catch { return null; }
 }
@@ -2808,7 +2826,7 @@ function prevMonthBucket(txs) {
 
 function mapTxShort(t) {
   return {
-    date: t.date.toISOString().slice(0, 10),
+    date: localDayStr(t.date),
     category: t.category || 'Other',
     amount: Math.round(Math.abs(+t.amount || 0) * 100) / 100,
     memo: (t.memo || '').trim(),
@@ -2984,7 +3002,7 @@ function buildCheckinDossier(txs) {
   });
 
   const livretWd = livretWithdrawals().slice(0, 6).map(w => ({
-    date: w.date.toISOString().slice(0, 10),
+    date: localDayStr(w.date),
     amount: Math.round(w.amount),
     balance: Math.round(w.balance),
   }));
@@ -3240,13 +3258,15 @@ async function generateAiSummary(txs, force = false) {
 
   const prompt = buildCheckinPrompt(ctx);
   const errors = [];
+  const digest = `dossier ${ctx.unbudgetedCats?.length || 0} unbudgeted cat · ${ctx.labeledAnchors?.length || 0} labels · ${ctx.unbudgetedExpenses?.length || 0} out-of-band txs`;
+  setCheckinStatus('Calling Gemini… · ' + digest, 'warn');
 
   try {
     let result = null;
     // Prefer grounded search; fall back across models, then plain generation.
     outer: for (const withSearch of [true, false]) {
       for (const model of GEMINI_CHECKIN_MODELS) {
-        if (!stillCurrent()) return;
+        if (!stillCurrent()) break outer;
         try {
           result = await callGeminiCheckin(apiKey, prompt, { withSearch, model });
           break outer;
@@ -3256,27 +3276,30 @@ async function generateAiSummary(txs, force = false) {
         }
       }
     }
-    if (!stillCurrent()) return;
-    if (!result) throw new Error(errors.slice(0, 3).join(' · ') || 'all attempts failed');
-    if (/offline fallback|Gemini didn’t run|Gemini didn't run/i.test(result.text)) {
+    if (!stillCurrent()) {
+      // Superseded by a newer refresh — do not touch UI.
+    } else if (!result) {
+      throw new Error(errors.slice(0, 3).join(' · ') || 'all attempts failed');
+    } else if (/offline fallback|Gemini didn’t run|Gemini didn't run/i.test(result.text)) {
       throw new Error('model returned offline-template-like text');
+    } else {
+      el.innerHTML = renderAiHtml(result.text);
+      setAiCache(result.text, { source: 'ai' });
+      setCheckinStatus(
+        (result.grounded
+          ? `Live AI · ${result.model} · Google Search grounding on`
+          : `Live AI · ${result.model} · model knowledge (no search hits)`) + ' · ' + digest,
+        'ok'
+      );
     }
-
-    el.innerHTML = renderAiHtml(result.text);
-    setAiCache(result.text, { source: 'ai' });
-    setCheckinStatus(
-      result.grounded
-        ? `Live AI · ${result.model} · Google Search grounding on`
-        : `Live AI · ${result.model} · model knowledge (no search hits)`,
-      'ok'
-    );
   } catch (e) {
     console.warn('Gemini check-in failed:', e.message, errors);
-    finishLocal('AI failed (' + (e.message || 'error') + ') — offline template below. Check key/quota in Settings.');
-  }
-  if (stillCurrent()) {
-    aiGenerating = false;
-    if (btn) { btn.textContent = 'Refresh check-in'; btn.disabled = false; }
+    finishLocal('AI failed (' + (e.message || 'error') + ') — offline template below. Check key/quota in Settings. · ' + digest);
+  } finally {
+    if (stillCurrent()) {
+      aiGenerating = false;
+      if (btn) { btn.textContent = 'Refresh check-in'; btn.disabled = false; }
+    }
   }
 }
 
