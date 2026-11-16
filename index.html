@@ -257,6 +257,9 @@ body:not(.locked) #unlock-overlay{display:none!important}
   font-size:10px;letter-spacing:.1em;text-transform:uppercase;
   color:var(--muted);font-weight:600;
 }
+.hero-perf .hero-perf-sub{
+  margin-top:2px;letter-spacing:.06em;font-size:9px;text-transform:none;font-weight:500;
+}
 .hero-perf strong{
   display:block;margin-top:3px;
   font-family:var(--mono);font-size:15px;font-weight:600;
@@ -570,13 +573,10 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
         </div>
         <div class="hero-perf-row">
           <div class="hero-perf" id="hero-perf" hidden>
-            <div title="Wallet income − spend over the same comparison window — what you control">
-              <span>You</span>
-              <strong class="blur-val flat" id="hero-perf-you">—</strong>
-            </div>
-            <div title="Residual = overall Δ net worth − You. Not PEA-only: includes mark-to-market, Livret moves outside the wallet, and timing noise.">
-              <span>Residual</span>
-              <strong class="blur-val flat" id="hero-perf-markets">—</strong>
+            <div title="Calendar-month wallet income − spend — same figure as Spend → This month net. Not income alone, and not tied to the net-worth comparison window.">
+              <span>Surplus</span>
+              <span class="hero-perf-sub">this month</span>
+              <strong class="blur-val flat" id="hero-perf-surplus">—</strong>
             </div>
           </div>
         </div>
@@ -624,7 +624,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
           <div class="chart-toolbar-mid">
             <div class="chart-pane-tabs" role="tablist" aria-label="Performance history">
               <button type="button" class="on" data-perf-hist="overall" onclick="setPerfHistTab('overall')">Overall</button>
-              <button type="button" data-perf-hist="you" onclick="setPerfHistTab('you')">You</button>
+              <button type="button" data-perf-hist="you" onclick="setPerfHistTab('you')">Surplus</button>
               <button type="button" data-perf-hist="markets" onclick="setPerfHistTab('markets')">Markets</button>
             </div>
           </div>
@@ -1717,67 +1717,7 @@ function computeHeroNwBoost() {
   };
 }
 
-/** How close a historical PEA/Livret reading must be to the hero baseline date. */
-function heroAccountSlackMs(mode) {
-  if (mode === 'check') return 3 * 86400000;
-  if (mode === '3m') return 40 * 86400000;
-  if (mode === '1y') return 75 * 86400000;
-  return 21 * 86400000; // vs previous month
-}
-
-/**
- * Nearest series value for `key` ('pea'|'livret') around atMs.
- * Returns null when the closest observation is too far — avoids fake
- * “Livret −€1.5k this month” from a 2024 PDF statement.
- */
-function accountValueNear(atMs, key, maxSlackMs) {
-  let best = null;
-  let bestDist = Infinity;
-  wealthHistorySeries().forEach(r => {
-    const v = r[key];
-    if (v == null || !isFinite(v)) return;
-    // Ignore today's live point when asking for a past baseline.
-    const src = r.source || '';
-    if (src === 'live' && Math.abs(+r.date - Date.now()) < 36e5) return;
-    const dist = Math.abs(+r.date - atMs);
-    if (dist < bestDist) {
-      best = v;
-      bestDist = dist;
-    }
-  });
-  if (best == null || bestDist > maxSlackMs) return null;
-  return best;
-}
-
-/**
- * PEA / Livret / PEE change vs the same hero comparison window.
- * Only shown when we have a reading near that baseline (not “last known ever”).
- */
-function computeHeroAccountDeltas() {
-  const base = heroCompareBaseline(heroVsMode);
-  if (!base || !(base.at > 0)) return { pea: null, livret: null, pee: null, baseline: null };
-  const slack = heroAccountSlackMs(heroVsMode);
-  const peaThen = accountValueNear(base.at, 'pea', slack);
-  const livretThen = accountValueNear(base.at, 'livret', slack);
-  return {
-    pea: peaThen != null ? Math.round((STATE.pea || 0) - peaThen) : null,
-    livret: livretThen != null ? Math.round((STATE.livretA || 0) - livretThen) : null,
-    pee: null,
-    baseline: base,
-  };
-}
-
-function heroAcctDeltaHtml(delta) {
-  if (delta == null || !isFinite(delta)) {
-    return `<span class="hero-acct-delta flat" hidden>—</span>`;
-  }
-  const dir = deltaDir(delta);
-  const arrow = dir === 'up' ? '↑' : (dir === 'down' ? '↓' : '→');
-  const txt = dir === 'flat' ? '€0' : fmtDelta(delta, null);
-  return `<span class="hero-acct-delta blur-val ${dir}"><span aria-hidden="true">${arrow}</span>${txt}</span>`;
-}
-
-/** Wallet income − spend inside [fromAt, toAt] — controllable cashflow. */
+/** Wallet income − spend inside [fromAt, toAt] — for perf-history / AI vs-window only. */
 function walletNetInWindow(txs, fromAt, toAt = Date.now()) {
   const from = +fromAt || 0;
   const to = +toAt || Date.now();
@@ -1795,8 +1735,8 @@ function walletNetInWindow(txs, fromAt, toAt = Date.now()) {
 }
 
 /**
- * Split the hero wealth delta into controllable (you / wallet) vs residual markets.
- * Residual ≈ PEA mark-to-market + Livret/other revaluations + timing noise — not day-to-day choices.
+ * Vs-window split for perf-history / AI only — not shown in the hero.
+ * Plug (wealthΔ − wallet net) is timing + mark-to-market noise, not a clean “markets” figure.
  */
 function computeWealthPerfSplit(hero, txs) {
   if (!hero || hero.pending || !(hero.baseline?.at > 0) || hero.amount == null) return null;
@@ -2177,10 +2117,10 @@ function drawPerfHistory() {
     ? toWealthLevelSeries(bins)
     : (perfHistCum ? toCumulativeSeries(periodValues) : periodValues);
   const baseTitle = key === 'you'
-    ? 'You (controllable)'
+    ? 'Surplus (wallet net / period)'
     : (key === 'markets' ? 'Markets (non-controllable)' : (overallAsLevel ? 'Net worth' : 'Overall wealth change'));
   const title = perfHistCum && !overallAsLevel ? `${baseTitle} · cumulative` : baseTitle;
-  // You → mean savings (controllable habit). Overall/Markets → median Δ (less skewed by crash/rally bins).
+  // Surplus → mean savings habit. Overall/Markets → median Δ (less skewed by crash/rally bins).
   const knownPeriod = periodValues.filter(v => v != null && isFinite(v));
   const useMedian = key !== 'you';
   const center = useMedian
@@ -2440,47 +2380,38 @@ function renderHero() {
     }
   }
 
+  // Surplus = calendar-month wallet net (same as Spend). Not the vs-window split.
+  const surplus = monthSurplus(STATE.transactions);
   const perfEl = document.getElementById('hero-perf');
-  const youEl = document.getElementById('hero-perf-you');
-  const mktEl = document.getElementById('hero-perf-markets');
-  const split = boosts.perfSplit;
-  if (perfEl && youEl && mktEl) {
-    if (!split) {
+  const surplusEl = document.getElementById('hero-perf-surplus');
+  if (perfEl && surplusEl) {
+    if (!surplus.n) {
       perfEl.hidden = true;
-      youEl.textContent = '—';
-      mktEl.textContent = '—';
-      youEl.className = 'blur-val flat';
-      mktEl.className = 'blur-val flat';
+      surplusEl.textContent = '—';
+      surplusEl.className = 'blur-val flat';
     } else {
       perfEl.hidden = false;
-      youEl.textContent = fmtDelta(split.controllable, null);
-      mktEl.textContent = fmtDelta(split.markets, null);
-      youEl.className = 'blur-val ' + split.controllableDir;
-      mktEl.className = 'blur-val ' + split.marketsDir;
+      const rounded = Math.round(surplus.net);
+      surplusEl.textContent = fmtDelta(rounded, null);
+      surplusEl.className = 'blur-val ' + deltaDir(rounded);
     }
   }
 
-  const acctDeltas = computeHeroAccountDeltas();
   const bits = [
-    ['PEA', STATE.pea, acctDeltas.pea],
-    ['Livret A', STATE.livretA, acctDeltas.livret],
-    STATE.pee ? ['PEE', STATE.pee, acctDeltas.pee] : null,
-    STATE.checking ? ['Cash', STATE.checking, null] : null,
+    ['PEA', STATE.pea],
+    ['Livret A', STATE.livretA],
+    STATE.pee ? ['PEE', STATE.pee] : null,
+    STATE.checking ? ['Cash', STATE.checking] : null,
   ].filter(Boolean);
   const splitEl = document.getElementById('hero-split');
   if (splitEl) {
     splitEl.style.gridTemplateColumns = bits.length >= 3
       ? `repeat(${Math.min(bits.length, 3)},minmax(0,1fr))`
       : `repeat(${bits.length},minmax(0,1fr))`;
-    splitEl.innerHTML = bits.map(([lbl, v, d]) =>
-      `<div title="${lbl} balance` +
-        (d != null && acctDeltas.baseline
-          ? ` · change vs ${acctDeltas.baseline.label || 'comparison'}`
-          : '') +
-      `">` +
+    splitEl.innerHTML = bits.map(([lbl, v]) =>
+      `<div title="${lbl} balance">` +
       `<span class="hero-acct-lbl">${lbl}</span>` +
       `<strong class="hero-acct-val blur-val">${fmt(v)}</strong>` +
-      heroAcctDeltaHtml(d) +
       `</div>`
     ).join('');
   }
@@ -2496,18 +2427,24 @@ function renderHero() {
 function monthBucket(txs) {
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth();
-  return txs.filter(t =>
+  return (txs || []).filter(t =>
+    t?.date &&
     t.date.getFullYear() === y && t.date.getMonth() === m &&
     t.category !== 'Month progress bar' && t.category !== 'Month progress bar compensation'
   );
 }
 
-function renderCashflow(txs) {
+/** Calendar-month wallet income − spend — same net as Spend → This month. */
+function monthSurplus(txs) {
   const month = monthBucket(txs);
+  const inc = month.filter(isIncomeTx).reduce((s, t) => s + Math.abs(+t.amount || 0), 0);
+  const exp = month.filter(isExpenseTx).reduce((s, t) => s + Math.abs(+t.amount || 0), 0);
+  return { net: inc - exp, inc, exp, n: month.length, month };
+}
+
+function renderCashflow(txs) {
+  const { month, inc, exp, net } = monthSurplus(txs);
   const incomeTxs = month.filter(isIncomeTx);
-  const inc = incomeTxs.reduce((s, t) => s + Math.abs(+t.amount || 0), 0);
-  const exp = month.filter(isExpenseTx).reduce((s, t) => s + Math.abs(t.amount), 0);
-  const net = inc - exp;
   const elInc = document.getElementById('stat-inc');
   const elExp = document.getElementById('stat-exp');
   const elNet = document.getElementById('stat-net');
@@ -4068,7 +4005,7 @@ function buildCheckinDossier(txs) {
     balance: Math.round(w.balance),
   }));
 
-  // Prefer the same hero-window split shown on screen; fall back to calendar-month residual.
+  // Vs-window split for AI context only — hero Surplus uses householdNetThisMonthEur.
   const perfSplit = boosts.perfSplit || computeWealthPerfSplit(hero, all);
   const wealthDelta = perfSplit ? perfSplit.wealthDelta : (hero ? Math.round(hero.amount) : null);
   const controllable = perfSplit ? perfSplit.controllable : Math.round(saved);
@@ -4101,7 +4038,7 @@ function buildCheckinDossier(txs) {
       wealthDeltaPct: hero && hero.pct != null ? +hero.pct.toFixed(2) : null,
       vs: hero?.baseline?.label || perfSplit?.windowLabel || null,
       baselineWhen: hero?.baseline?.when || perfSplit?.windowWhen || null,
-      note: 'controllablePerfEur = wallet income−spend over the same hero comparison window (what he controls). nonControllablePerfEur = wealth delta minus that (mostly PEA mark-to-market / revaluations). householdNetThisMonthEur remains calendar-month only.',
+      note: 'Hero shows calendar-month surplus = householdNetThisMonthEur (same as Spend). controllablePerfEur is vs-window only for history/AI context, not the hero label.',
       controllablePerfEur: controllable,
       nonControllablePerfEur: residualVsCashflow,
       householdNetThisMonthEur: Math.round(saved),
@@ -4110,9 +4047,7 @@ function buildCheckinDossier(txs) {
       unbudgetedSpendThisMonthEur: Math.round(unbudgetedSpendTotal),
       residualLikelyMarkToMarketOrOtherEur: residualVsCashflow,
       portfolioMoveLikelyDominatesWealthChange: portfolioLikelyDominant,
-      reading: portfolioLikelyDominant
-        ? 'Non-controllable (markets/revaluations) dominates the wealth move — lead with PEA mark-to-market; treat wallet saving as secondary colour.'
-        : 'Controllable wallet cashflow explains a meaningful share of the wealth move; still mention markets if nonControllablePerfEur is material.',
+      reading: 'Lead with calendar-month surplus (householdNetThisMonthEur). Wealth Δ vs baseline is separate; do not call residual “markets” in the hero sense.',
     },
     accounts: {
       netWorth: Math.round(netWorth()),
@@ -4144,11 +4079,10 @@ function localCheckinText(ctx) {
       : `You're up **${fmtDelta(hero.amount, hero.pct)}** vs ${hero.baseline?.label || 'last period'}${hero.baseline?.when ? ` (${hero.baseline.when})` : ''}, at **${fmt(nw)}**.`)
     : `Net worth is **${fmt(nw)}** — still building a clean comparison baseline.`;
 
-  const youAmt = decomp.controllablePerfEur;
-  const mktAmt = decomp.nonControllablePerfEur;
-  const marketBit = (youAmt != null && mktAmt != null)
-    ? ` Of that, **you** (controllable wallet net) are at **${fmtDelta(youAmt, null)}**, and **markets** (non-controllable) at **${fmtDelta(mktAmt, null)}**.`
-    : ` This month’s household net is **${fmt(decomp.householdNetThisMonthEur)}** (**${fmt(ctx.inc)}** in / **${fmt(ctx.exp)}** out).`;
+  const surplusAmt = decomp.householdNetThisMonthEur;
+  const marketBit = surplusAmt != null
+    ? ` Calendar-month **surplus** (wallet income − spend) is **${fmtDelta(Math.round(surplusAmt), null)}** (**${fmt(ctx.inc)}** in / **${fmt(ctx.exp)}** out).`
+    : '';
 
   const memoHits = (ctx.labeledAnchors || []).slice(0, 5);
   const over = ctx.budgetRows.filter(b => b.over > 0).slice(0, 3);
