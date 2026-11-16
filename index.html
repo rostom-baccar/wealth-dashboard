@@ -121,7 +121,7 @@ body:not(.locked) #unlock-overlay{display:none!important}
 
 .hero{
   position:relative;margin:0 0 28px;
-  padding:28px 28px 24px;overflow:hidden;border-radius:18px;
+  padding:24px 24px 20px;overflow:hidden;border-radius:18px;
   background:
     linear-gradient(165deg, rgba(126,160,211,0.18) 0%, transparent 42%),
     linear-gradient(205deg, #163154 0%, #0c1a2e 48%, #081018 100%);
@@ -140,43 +140,43 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .hero-layout{
   position:relative;z-index:1;
   display:grid;
-  grid-template-columns:minmax(0,0.82fr) minmax(320px,1.18fr);
-  gap:20px 24px;
+  grid-template-columns:minmax(0,0.92fr) minmax(300px,1.08fr);
+  gap:18px 22px;
   align-items:stretch;
 }
 .hero-main{
-  display:flex;flex-direction:column;justify-content:flex-start;min-width:0;
+  display:flex;flex-direction:column;justify-content:flex-start;gap:10px;min-width:0;
 }
 .hero-brand{
   font-weight:700;
-  font-size:clamp(48px,10vw,96px);letter-spacing:-0.045em;line-height:.88;
-  margin-bottom:16px;color:#fff;
+  font-size:clamp(44px,9vw,84px);letter-spacing:-0.045em;line-height:.88;
+  margin:0;color:#fff;
 }
 .hero-kicker{
   font-size:11px;letter-spacing:.16em;text-transform:uppercase;
-  color:rgba(238,243,248,.65);margin-bottom:8px;font-weight:600;
+  color:rgba(238,243,248,.65);margin:2px 0 0;font-weight:600;
 }
 .hero-amount{
   font-family:var(--mono);font-weight:600;
-  font-size:clamp(32px,6vw,48px);letter-spacing:-0.03em;color:var(--gold);margin-bottom:8px;
+  font-size:clamp(30px,5.5vw,44px);letter-spacing:-0.03em;color:var(--gold);margin:0;
 }
 .hero-delta-row{
-  display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;
-  margin-bottom:12px;
+  display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;
+  margin:0;
 }
 .hero-delta{
   font-family:var(--mono);font-weight:600;
-  font-size:clamp(15px,2.8vw,20px);letter-spacing:-0.02em;
-  display:inline-flex;align-items:center;gap:8px;transition:color .25s ease;
+  font-size:clamp(14px,2.6vw,18px);letter-spacing:-0.02em;
+  display:inline-flex;align-items:center;gap:6px;transition:color .25s ease;
 }
 .hero-delta .hero-arrow{font-size:1.05em;line-height:1}
 .hero-delta.flat{color:var(--muted)}
 .hero-perf-row{
   display:flex;flex-wrap:wrap;align-items:flex-end;
-  gap:12px 18px;margin:8px 0 16px;
+  gap:10px 20px;margin:0;
 }
 .hero-perf{
-  display:flex;flex-wrap:wrap;gap:14px 28px;
+  display:flex;flex-wrap:wrap;gap:4px 22px;
   margin:0;padding:0;
 }
 .hero-perf[hidden]{display:none!important}
@@ -281,14 +281,38 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .tab-boost b{font-family:var(--mono);color:var(--text)}
 .tab-boost.up b{color:var(--ok)}
 .tab-boost.down b{color:var(--bad)}
-.hero-split{display:flex;flex-wrap:wrap;gap:12px 20px;margin-bottom:18px}
-.hero-split > div{
-  min-width:108px;padding:10px 14px;border-radius:12px;
-  background:rgba(7,13,22,0.35);border:1px solid rgba(126,160,211,0.16);
+.hero-split{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;
+  margin:2px 0 0;
 }
-.hero-split span{display:block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
-.hero-split strong{display:block;margin-top:4px;font-family:var(--mono);font-size:17px;font-weight:600;color:#fff}
-.hero-cta{display:flex;gap:8px;flex-wrap:wrap}
+.hero-split > div{
+  min-width:0;padding:10px 12px;border-radius:12px;
+  background:rgba(7,13,22,0.38);border:1px solid rgba(126,160,211,0.14);
+  backdrop-filter:blur(8px);
+}
+.hero-split .hero-acct-lbl{
+  display:block;font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;
+}
+.hero-split .hero-acct-val{
+  display:block;margin-top:5px;font-family:var(--mono);font-size:clamp(15px,2.2vw,18px);
+  font-weight:600;color:#fff;letter-spacing:-0.02em;
+}
+.hero-split .hero-acct-delta{
+  display:inline-flex;align-items:center;gap:4px;margin-top:6px;
+  font-family:var(--mono);font-size:12px;font-weight:600;line-height:1.2;
+}
+.hero-split .hero-acct-delta.up{color:var(--ok)}
+.hero-split .hero-acct-delta.down{color:var(--bad)}
+.hero-split .hero-acct-delta.flat{color:var(--muted)}
+.hero-split .hero-acct-delta[hidden]{display:none!important}
+@media (max-width:560px){
+  .hero-split{grid-template-columns:1fr}
+}
+.hero-cta{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
+.hero-cta .btn{padding:8px 12px;font-size:11px}
 
 .section{margin-bottom:48px;animation:fade .5s ease both}
 .section-head{display:flex;justify-content:space-between;align-items:end;gap:14px;flex-wrap:wrap;margin-bottom:16px}
@@ -422,9 +446,10 @@ body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
 
 
 @media (max-width:640px){
-  .hero{padding:24px 18px 20px;margin-bottom:16px}
-  .hero-brand{font-size:clamp(40px,11vw,64px);margin-bottom:10px}
+  .hero{padding:20px 16px 18px;margin-bottom:16px}
+  .hero-brand{font-size:clamp(40px,11vw,64px)}
   .hero-amount{font-size:clamp(28px,6vw,36px)}
+  .hero-main{gap:8px}
 }
 .tabs{
   display:flex;gap:4px;flex-wrap:wrap;padding:4px;margin:0 0 18px;
@@ -1705,6 +1730,42 @@ function computeHeroNwBoost() {
   };
 }
 
+/**
+ * PEA / Livret / PEE change vs the same hero comparison baseline.
+ * Uses reconstructed wealth history (contributions × multiple, livret statements).
+ */
+function computeHeroAccountDeltas() {
+  const base = heroCompareBaseline(heroVsMode);
+  if (!base || !(base.at > 0)) return { pea: null, livret: null, pee: null, baseline: null };
+  const at = base.at;
+  let peaThen = null;
+  let livretThen = null;
+  wealthHistorySeries().forEach(r => {
+    if (+r.date > at) return;
+    if (r.pea != null) peaThen = r.pea;
+    if (r.livret != null) livretThen = r.livret;
+  });
+  const peaNow = STATE.pea || 0;
+  const livretNow = STATE.livretA || 0;
+  // PEE is manual / rarely time-series — only show a delta if we somehow had a prior NW log proxy.
+  return {
+    pea: peaThen != null ? Math.round(peaNow - peaThen) : null,
+    livret: livretThen != null ? Math.round(livretNow - livretThen) : null,
+    pee: null,
+    baseline: base,
+  };
+}
+
+function heroAcctDeltaHtml(delta) {
+  if (delta == null || !isFinite(delta)) {
+    return `<span class="hero-acct-delta flat" hidden>—</span>`;
+  }
+  const dir = deltaDir(delta);
+  const arrow = dir === 'up' ? '↑' : (dir === 'down' ? '↓' : '→');
+  const txt = dir === 'flat' ? '€0' : fmtDelta(delta, null);
+  return `<span class="hero-acct-delta blur-val ${dir}"><span aria-hidden="true">${arrow}</span>${txt}</span>`;
+}
+
 /** Wallet income − spend inside [fromAt, toAt] — controllable cashflow. */
 function walletNetInWindow(txs, fromAt, toAt = Date.now()) {
   const from = +fromAt || 0;
@@ -2388,15 +2449,30 @@ function renderHero() {
     }
   }
 
+  const acctDeltas = computeHeroAccountDeltas();
   const bits = [
-    ['PEA', STATE.pea],
-    ['Livret A', STATE.livretA],
-    STATE.pee ? ['PEE', STATE.pee] : null,
-    STATE.checking ? ['Cash', STATE.checking] : null,
+    ['PEA', STATE.pea, acctDeltas.pea],
+    ['Livret A', STATE.livretA, acctDeltas.livret],
+    STATE.pee ? ['PEE', STATE.pee, acctDeltas.pee] : null,
+    STATE.checking ? ['Cash', STATE.checking, null] : null,
   ].filter(Boolean);
-  document.getElementById('hero-split').innerHTML = bits.map(([lbl, v]) =>
-    `<div><span>${lbl}</span><strong class="blur-val">${fmt(v)}</strong></div>`
-  ).join('');
+  const splitEl = document.getElementById('hero-split');
+  if (splitEl) {
+    splitEl.style.gridTemplateColumns = bits.length >= 3
+      ? `repeat(${Math.min(bits.length, 3)},minmax(0,1fr))`
+      : `repeat(${bits.length},minmax(0,1fr))`;
+    splitEl.innerHTML = bits.map(([lbl, v, d]) =>
+      `<div title="${lbl} balance` +
+        (d != null && acctDeltas.baseline
+          ? ` · change vs ${acctDeltas.baseline.label || 'comparison'}`
+          : '') +
+      `">` +
+      `<span class="hero-acct-lbl">${lbl}</span>` +
+      `<strong class="hero-acct-val blur-val">${fmt(v)}</strong>` +
+      heroAcctDeltaHtml(d) +
+      `</div>`
+    ).join('');
+  }
 
   setTabBoost('pea-tab-boost', boosts.pea);
   setTabBoost('livret-tab-boost', boosts.livret);
