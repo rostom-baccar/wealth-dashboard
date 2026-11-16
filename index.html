@@ -291,34 +291,22 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .tab-boost.up b{color:var(--ok)}
 .tab-boost.down b{color:var(--bad)}
 .hero-split{
-  display:grid;
-  grid-template-columns:repeat(3,minmax(0,1fr));
-  gap:8px;
-  margin:2px 0 0;
+  display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 0;
+  margin:4px 0 0;
+  font-size:13px;line-height:1.35;color:var(--muted);
 }
-.hero-split > div{
-  min-width:0;padding:10px 12px;border-radius:12px;
-  background:rgba(7,13,22,0.38);border:1px solid rgba(126,160,211,0.14);
-  backdrop-filter:blur(8px);
+.hero-split .hero-acct{
+  display:inline-flex;align-items:baseline;gap:6px;white-space:nowrap;
+}
+.hero-split .hero-acct-sep{
+  margin:0 10px;color:rgba(139,154,171,0.45);user-select:none;
 }
 .hero-split .hero-acct-lbl{
-  display:block;font-size:10px;letter-spacing:.12em;text-transform:uppercase;
-  color:var(--muted);font-weight:600;
+  font-size:11px;letter-spacing:.04em;color:var(--muted);font-weight:500;
 }
 .hero-split .hero-acct-val{
-  display:block;margin-top:5px;font-family:var(--mono);font-size:clamp(15px,2.2vw,18px);
-  font-weight:600;color:#fff;letter-spacing:-0.02em;
-}
-.hero-split .hero-acct-delta{
-  display:inline-flex;align-items:center;gap:4px;margin-top:6px;
-  font-family:var(--mono);font-size:12px;font-weight:600;line-height:1.2;
-}
-.hero-split .hero-acct-delta.up{color:var(--ok)}
-.hero-split .hero-acct-delta.down{color:var(--bad)}
-.hero-split .hero-acct-delta.flat{color:var(--muted)}
-.hero-split .hero-acct-delta[hidden]{display:none!important}
-@media (max-width:560px){
-  .hero-split{grid-template-columns:1fr}
+  font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text);
+  letter-spacing:-0.02em;
 }
 .hero-cta{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
 .hero-cta .btn{padding:8px 12px;font-size:11px}
@@ -2405,14 +2393,13 @@ function renderHero() {
   ].filter(Boolean);
   const splitEl = document.getElementById('hero-split');
   if (splitEl) {
-    splitEl.style.gridTemplateColumns = bits.length >= 3
-      ? `repeat(${Math.min(bits.length, 3)},minmax(0,1fr))`
-      : `repeat(${bits.length},minmax(0,1fr))`;
-    splitEl.innerHTML = bits.map(([lbl, v]) =>
-      `<div title="${lbl} balance">` +
+    splitEl.removeAttribute('style');
+    splitEl.innerHTML = bits.map(([lbl, v], i) =>
+      (i ? '<span class="hero-acct-sep" aria-hidden="true">·</span>' : '') +
+      `<span class="hero-acct" title="${lbl} balance">` +
       `<span class="hero-acct-lbl">${lbl}</span>` +
       `<strong class="hero-acct-val blur-val">${fmt(v)}</strong>` +
-      `</div>`
+      `</span>`
     ).join('');
   }
 
