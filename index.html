@@ -120,9 +120,8 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .pill-load{color:var(--gold);border-color:rgba(232,196,106,.3);background:var(--gold-dim)}
 
 .hero{
-  position:relative;margin:0 0 36px;min-height:min(72vh,580px);
-  display:flex;flex-direction:column;justify-content:flex-end;
-  padding:36px 28px 32px;overflow:hidden;border-radius:18px;
+  position:relative;margin:0 0 28px;min-height:min(58vh,520px);
+  padding:32px 28px 28px;overflow:hidden;border-radius:18px;
   background:
     linear-gradient(165deg, rgba(126,160,211,0.18) 0%, transparent 42%),
     linear-gradient(205deg, #163154 0%, #0c1a2e 48%, #081018 100%);
@@ -138,22 +137,33 @@ body:not(.locked) #unlock-overlay{display:none!important}
   animation:drift 16s ease-in-out infinite alternate;
 }
 .hero-atmosphere{display:none}
+.hero-layout{
+  position:relative;z-index:1;
+  display:grid;
+  grid-template-columns:minmax(0,1.05fr) minmax(260px,0.95fr);
+  gap:24px 36px;
+  align-items:stretch;
+  min-height:inherit;
+}
+.hero-main{
+  display:flex;flex-direction:column;justify-content:flex-end;min-width:0;
+}
 .hero-brand{
-  position:relative;z-index:1;font-weight:700;
-  font-size:clamp(56px,14vw,108px);letter-spacing:-0.045em;line-height:.88;
-  margin-bottom:18px;color:#fff;
+  font-weight:700;
+  font-size:clamp(48px,10vw,96px);letter-spacing:-0.045em;line-height:.88;
+  margin-bottom:16px;color:#fff;
 }
 .hero-kicker{
-  position:relative;z-index:1;font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+  font-size:11px;letter-spacing:.16em;text-transform:uppercase;
   color:rgba(238,243,248,.65);margin-bottom:8px;font-weight:600;
 }
 .hero-amount{
-  position:relative;z-index:1;font-family:var(--mono);font-weight:600;
-  font-size:clamp(36px,7vw,52px);letter-spacing:-0.03em;color:var(--gold);margin-bottom:8px;
+  font-family:var(--mono);font-weight:600;
+  font-size:clamp(32px,6vw,48px);letter-spacing:-0.03em;color:var(--gold);margin-bottom:8px;
 }
 .hero-delta-row{
-  position:relative;z-index:1;display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;
-  margin-bottom:16px;
+  display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;
+  margin-bottom:12px;
 }
 .hero-delta{
   font-family:var(--mono);font-weight:600;
@@ -163,9 +173,8 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .hero-delta .hero-arrow{font-size:1.05em;line-height:1}
 .hero-delta.flat{color:var(--muted)}
 .hero-perf{
-  position:relative;z-index:1;
   display:flex;flex-wrap:wrap;gap:14px 28px;
-  margin:10px 0 18px;
+  margin:8px 0 16px;
   padding:0;
 }
 .hero-perf[hidden]{display:none!important}
@@ -205,14 +214,14 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .tab-boost b{font-family:var(--mono);color:var(--text)}
 .tab-boost.up b{color:var(--ok)}
 .tab-boost.down b{color:var(--bad)}
-.hero-split{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:12px 20px;margin-bottom:20px}
+.hero-split{display:flex;flex-wrap:wrap;gap:12px 20px;margin-bottom:18px}
 .hero-split > div{
   min-width:108px;padding:10px 14px;border-radius:12px;
   background:rgba(7,13,22,0.35);border:1px solid rgba(126,160,211,0.16);
 }
 .hero-split span{display:block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
 .hero-split strong{display:block;margin-top:4px;font-family:var(--mono);font-size:17px;font-weight:600;color:#fff}
-.hero-cta{position:relative;z-index:1;display:flex;gap:8px;flex-wrap:wrap}
+.hero-cta{display:flex;gap:8px;flex-wrap:wrap}
 
 .section{margin-bottom:48px;animation:fade .5s ease both}
 .section-head{display:flex;justify-content:space-between;align-items:end;gap:14px;flex-wrap:wrap;margin-bottom:16px}
@@ -256,20 +265,21 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .feed-meta{color:var(--muted);font-size:11px;margin-top:3px;font-family:var(--mono)}
 .feed-amt{font-family:var(--mono);font-weight:600;white-space:nowrap}
 .feed-amt.inc{color:var(--ok)}.feed-amt.exp{color:var(--text)}
-.ai-brief{
-  margin:0;padding:18px 18px;position:relative;border-radius:var(--radius);
-  background:rgba(16,28,44,0.72);border:1px solid var(--line);
-  box-shadow:var(--shadow);font-size:13px;line-height:1.65;color:var(--muted);
+.hero-checkin{
+  margin:0;min-width:0;
+  display:flex;flex-direction:column;justify-content:flex-end;
 }
-.hero-checkin{margin:0 0 22px}
-.hero-checkin .ai-brief{
-  background:
-    linear-gradient(145deg, rgba(126,160,211,0.10), transparent 42%),
-    rgba(16,28,44,0.78);
+.ai-brief{
+  margin:0;padding:16px 16px;position:relative;border-radius:14px;
+  background:rgba(7,13,22,0.32);
+  border:1px solid rgba(126,160,211,0.18);
+  backdrop-filter:blur(10px);
+  font-size:13px;line-height:1.6;color:var(--muted);
+  display:flex;flex-direction:column;min-height:0;max-height:min(340px,46vh);
 }
 .doing-ai-head{
   display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
-  margin-bottom:12px;
+  margin-bottom:10px;flex-shrink:0;
 }
 .doing-ai-head .ai-tag{
   position:static;font-size:10px;letter-spacing:.12em;
@@ -278,13 +288,20 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .doing-ai-head .btn{padding:8px 12px;font-size:11px}
 .doing-ai-head .btn:disabled{opacity:.55;cursor:wait}
 .ai-brief b{color:var(--text)}
+.ai-brief #ai-body{flex:1 1 auto;min-height:0;overflow:auto;padding-right:2px}
 .ai-brief p{margin:0 0 0.85em;color:rgba(238,243,248,.82)}
 .ai-brief p:last-child{margin-bottom:0}
-.ai-status{margin:12px 0 0;font-size:11px;color:var(--muted);line-height:1.4}
+.ai-status{margin:10px 0 0;font-size:11px;color:var(--muted);line-height:1.4;flex-shrink:0}
 .ai-status[data-tone="bad"]{color:var(--bad)}
 .ai-status[data-tone="ok"]{color:var(--ok)}
 .ai-status[data-tone="warn"]{color:var(--gold)}
 .ai-loading{font-style:italic}
+@media (max-width:860px){
+  .hero{min-height:auto}
+  .hero-layout{grid-template-columns:1fr;gap:20px}
+  .hero-checkin{order:2}
+  .ai-brief{max-height:none}
+}
 .doing-pulse{
   display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px;
 }
@@ -337,9 +354,11 @@ body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
 @keyframes drift{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(1.5%,2%,0) scale(1.03)}}
 
 
-.hero{min-height:auto;padding:28px 24px 24px;margin-bottom:18px}
-.hero-brand{font-size:clamp(40px,10vw,72px);margin-bottom:10px}
-.hero-amount{font-size:clamp(28px,5.5vw,40px)}
+@media (max-width:640px){
+  .hero{padding:24px 18px 20px;margin-bottom:16px}
+  .hero-brand{font-size:clamp(40px,11vw,64px);margin-bottom:10px}
+  .hero-amount{font-size:clamp(28px,6vw,36px)}
+}
 .tabs{
   display:flex;gap:4px;flex-wrap:wrap;padding:4px;margin:0 0 18px;
   border:1px solid var(--line);border-radius:14px;background:rgba(16,28,44,.55);
@@ -432,44 +451,47 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
 
   <section class="hero" aria-label="Net worth">
     <div class="hero-atmosphere" aria-hidden="true"></div>
-    <div class="hero-brand">Rostom</div>
-    <div class="hero-kicker">Net worth</div>
-    <div class="hero-amount blur-val" id="nw-hero-val">—</div>
-    <div class="hero-delta-row">
-      <div class="hero-delta blur-val flat" id="hero-delta"></div>
-      <label class="hero-vs">
-        <select id="hero-vs" aria-label="Compare net worth against" onchange="onHeroVsChange()">
-          <option value="1m">vs previous month</option>
-          <option value="3m">vs 3 months</option>
-          <option value="1y">vs 1 year</option>
-          <option value="check">vs last check</option>
-        </select>
-      </label>
-    </div>
-    <div class="hero-perf" id="hero-perf" hidden>
-      <div title="Wallet income − spend over the same comparison window — what you control">
-        <span>You</span>
-        <strong class="blur-val flat" id="hero-perf-you">—</strong>
+    <div class="hero-layout">
+      <div class="hero-main">
+        <div class="hero-brand">Rostom</div>
+        <div class="hero-kicker">Net worth</div>
+        <div class="hero-amount blur-val" id="nw-hero-val">—</div>
+        <div class="hero-delta-row">
+          <div class="hero-delta blur-val flat" id="hero-delta"></div>
+          <label class="hero-vs">
+            <select id="hero-vs" aria-label="Compare net worth against" onchange="onHeroVsChange()">
+              <option value="1m">vs previous month</option>
+              <option value="3m">vs 3 months</option>
+              <option value="1y">vs 1 year</option>
+              <option value="check">vs last check</option>
+            </select>
+          </label>
+        </div>
+        <div class="hero-perf" id="hero-perf" hidden>
+          <div title="Wallet income − spend over the same comparison window — what you control">
+            <span>You</span>
+            <strong class="blur-val flat" id="hero-perf-you">—</strong>
+          </div>
+          <div title="Wealth move not explained by wallet cashflow — mostly PEA mark-to-market and other revaluations">
+            <span>Markets</span>
+            <strong class="blur-val flat" id="hero-perf-markets">—</strong>
+          </div>
+        </div>
+        <div class="hero-split" id="hero-split"></div>
+        <div class="hero-cta">
+          <button class="btn" type="button" onclick="goThisMonth()">This month</button>
+        </div>
       </div>
-      <div title="Wealth move not explained by wallet cashflow — mostly PEA mark-to-market and other revaluations">
-        <span>Markets</span>
-        <strong class="blur-val flat" id="hero-perf-markets">—</strong>
-      </div>
-    </div>
-    <div class="hero-split" id="hero-split"></div>
-    <div class="hero-cta">
-      <button class="btn" type="button" onclick="goThisMonth()">This month</button>
-    </div>
-  </section>
-
-  <section class="hero-checkin" aria-label="AI check-in">
-    <div class="ai-brief" id="ai-box">
-      <div class="doing-ai-head">
-        <span class="ai-tag">How you're doing</span>
-        <button type="button" class="btn" id="ai-refresh-btn" onclick="forceAiRefresh()">Refresh check-in</button>
-      </div>
-      <div id="ai-body"><span class="ai-loading">Unlock to load your check-in…</span></div>
-      <p class="ai-status" id="ai-status"></p>
+      <aside class="hero-checkin" aria-label="AI check-in">
+        <div class="ai-brief" id="ai-box">
+          <div class="doing-ai-head">
+            <span class="ai-tag">How you're doing</span>
+            <button type="button" class="btn" id="ai-refresh-btn" onclick="forceAiRefresh()">Refresh check-in</button>
+          </div>
+          <div id="ai-body"><span class="ai-loading">Unlock to load your check-in…</span></div>
+          <p class="ai-status" id="ai-status"></p>
+        </div>
+      </aside>
     </div>
   </section>
 
