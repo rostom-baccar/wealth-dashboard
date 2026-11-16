@@ -148,24 +148,24 @@ body:not(.locked) #unlock-overlay{display:none!important}
 }
 .hero-brand{
   font-weight:700;
-  font-size:clamp(44px,9vw,84px);letter-spacing:-0.045em;line-height:.88;
-  margin:0;color:#fff;
+  font-size:clamp(28px,5.5vw,42px);letter-spacing:-0.04em;line-height:1;
+  margin:0;color:rgba(238,243,248,.88);
 }
 .hero-kicker{
   font-size:11px;letter-spacing:.16em;text-transform:uppercase;
-  color:rgba(238,243,248,.65);margin:0;font-weight:600;
+  color:rgba(238,243,248,.55);margin:2px 0 0;font-weight:600;
 }
 .hero-amount{
   font-family:var(--mono);font-weight:600;
-  font-size:clamp(30px,5.5vw,44px);letter-spacing:-0.03em;color:#fff;margin:0;
-  transition:color .25s ease;
+  font-size:clamp(36px,6.5vw,52px);letter-spacing:-0.035em;color:#fff;margin:0;
+  transition:color .25s ease;line-height:1.05;
 }
 .hero-amount.up{color:var(--ok)}
 .hero-amount.down{color:var(--bad)}
 .hero-amount.flat{color:#fff}
 .hero-delta-row{
-  display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;
-  margin:2px 0 0;
+  display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;
+  margin:4px 0 0;
 }
 .hero-delta{
   font-family:var(--mono);font-weight:600;
@@ -174,15 +174,24 @@ body:not(.locked) #unlock-overlay{display:none!important}
 }
 .hero-delta .hero-arrow{font-size:1.05em;line-height:1}
 .hero-delta.flat{color:var(--muted)}
-.hero-perf-row{
-  display:flex;flex-wrap:wrap;align-items:flex-end;
-  gap:10px 20px;margin:0;
-}
 .hero-perf{
-  display:flex;flex-wrap:wrap;gap:4px 22px;
-  margin:0;padding:0;
+  display:inline-flex;align-items:baseline;gap:8px;
+  margin:0;padding:0;min-width:0;cursor:pointer;
+  border:0;background:transparent;color:inherit;font:inherit;text-align:left;
 }
 .hero-perf[hidden]{display:none!important}
+.hero-perf:hover .hero-perf-lbl{color:var(--text)}
+.hero-perf .hero-perf-lbl{
+  font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;white-space:nowrap;
+}
+.hero-perf strong{
+  font-family:var(--mono);font-size:15px;font-weight:600;margin:0;
+  color:var(--muted);
+}
+.hero-perf strong.up{color:var(--ok)}
+.hero-perf strong.down{color:var(--bad)}
+.hero-perf strong.flat{color:var(--muted)}
 .perf-history .chart-wrap{height:280px}
 .chart-toolbar{
   display:grid;
@@ -254,20 +263,6 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .fold:not(.on) .fold-tog{transform:rotate(-90deg)}
 .fold:not(.on) .fold-body{display:none}
 .fold:not(.on) .fold-head{margin-bottom:0}
-.hero-perf > div{min-width:0}
-.hero-perf span{
-  display:block;
-  font-size:10px;letter-spacing:.1em;text-transform:uppercase;
-  color:var(--muted);font-weight:600;
-}
-.hero-perf strong{
-  display:block;margin-top:3px;
-  font-family:var(--mono);font-size:15px;font-weight:600;
-  color:var(--muted);
-}
-.hero-perf strong.up{color:var(--ok)}
-.hero-perf strong.down{color:var(--bad)}
-.hero-perf strong.flat{color:var(--muted)}
 .hero-vs{
   display:inline-flex;align-items:center;
 }
@@ -332,9 +327,6 @@ body:not(.locked) #unlock-overlay{display:none!important}
   color:var(--muted);font-weight:600;margin-bottom:4px;
 }
 .hero-mix-tip .tip-meta{color:var(--muted);margin-top:2px}
-.hero-cta{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
-.hero-cta .btn{padding:8px 12px;font-size:11px}
-
 .section{margin-bottom:48px;animation:fade .5s ease both}
 .section-head{display:flex;justify-content:space-between;align-items:end;gap:14px;flex-wrap:wrap;margin-bottom:16px}
 .section-head h2{font-size:clamp(22px,4vw,28px);font-weight:700;letter-spacing:-0.03em}
@@ -548,19 +540,14 @@ body.anon .inc-chip strong,body.anon .budget-row,body.anon .hold-row{filter:blur
               <option value="check">vs last check</option>
             </select>
           </label>
-        </div>
-        <div class="hero-perf-row">
-          <div class="hero-perf" id="hero-perf" hidden>
-            <div title="Calendar-month wallet income − spend — same figure as Spend → This month net. Not income alone, and not tied to the net-worth comparison window.">
-              <span>Surplus this month</span>
-              <strong class="blur-val flat" id="hero-perf-surplus">—</strong>
-            </div>
-          </div>
+          <button type="button" class="hero-perf" id="hero-perf" hidden
+            title="Calendar-month wallet income − spend — same as Spend. Click to open This month."
+            onclick="goThisMonth()">
+            <span class="hero-perf-lbl">Surplus this month</span>
+            <strong class="blur-val flat" id="hero-perf-surplus">—</strong>
+          </button>
         </div>
         <div class="hero-split" id="hero-split"></div>
-        <div class="hero-cta">
-          <button class="btn" type="button" onclick="goThisMonth()">This month</button>
-        </div>
       </div>
       <aside class="hero-checkin" aria-label="AI check-in">
         <div class="ai-brief" id="ai-box">
