@@ -280,22 +280,43 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .hero-vs select:focus{outline:none;border-color:rgba(126,160,211,.45);color:var(--text)}
 .hero-vs select option{background:var(--panel);color:var(--text)}
 .hero-split{
-  display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 0;
-  margin:4px 0 0;
-  font-size:13px;line-height:1.35;color:var(--muted);
+  display:flex;flex-direction:column;gap:8px;
+  margin:6px 0 0;max-width:min(420px,100%);
 }
-.hero-split .hero-acct{
+.hero-mix-bar{
+  display:flex;width:100%;height:10px;border-radius:999px;overflow:hidden;
+  background:rgba(7,13,22,0.45);border:1px solid rgba(126,160,211,0.16);
+}
+.hero-mix-seg{
+  min-width:0;height:100%;
+  transition:flex-grow .35s ease;
+}
+.hero-mix-seg[data-key="pea"]{background:var(--gold)}
+.hero-mix-seg[data-key="livret"]{background:var(--aegean)}
+.hero-mix-seg[data-key="pee"]{background:var(--ok)}
+.hero-mix-seg[data-key="cash"]{background:#8b9aab}
+.hero-mix-legend{
+  display:flex;flex-wrap:wrap;gap:6px 14px;
+  font-size:12px;line-height:1.3;color:var(--muted);
+}
+.hero-mix-item{
   display:inline-flex;align-items:baseline;gap:6px;white-space:nowrap;
 }
-.hero-split .hero-acct-sep{
-  margin:0 10px;color:rgba(139,154,171,0.45);user-select:none;
+.hero-mix-dot{
+  width:7px;height:7px;border-radius:50%;flex:0 0 auto;
+  align-self:center;
 }
-.hero-split .hero-acct-lbl{
-  font-size:11px;letter-spacing:.04em;color:var(--muted);font-weight:500;
-}
-.hero-split .hero-acct-val{
-  font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text);
+.hero-mix-dot[data-key="pea"]{background:var(--gold)}
+.hero-mix-dot[data-key="livret"]{background:var(--aegean)}
+.hero-mix-dot[data-key="pee"]{background:var(--ok)}
+.hero-mix-dot[data-key="cash"]{background:#8b9aab}
+.hero-mix-lbl{font-size:11px;letter-spacing:.04em;font-weight:500}
+.hero-mix-val{
+  font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text);
   letter-spacing:-0.02em;
+}
+.hero-mix-pct{
+  font-family:var(--mono);font-size:11px;color:var(--muted);
 }
 .hero-cta{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
 .hero-cta .btn{padding:8px 12px;font-size:11px}
@@ -2196,25 +2217,45 @@ function renderHero() {
     }
   }
 
-  const bits = [
-    ['PEA', STATE.pea],
-    ['Livret A', STATE.livretA],
-    STATE.pee ? ['PEE', STATE.pee] : null,
-    STATE.checking ? ['Cash', STATE.checking] : null,
-  ].filter(Boolean);
   const splitEl = document.getElementById('hero-split');
-  if (splitEl) {
-    splitEl.removeAttribute('style');
-    splitEl.innerHTML = bits.map(([lbl, v], i) =>
-      (i ? '<span class="hero-acct-sep" aria-hidden="true">·</span>' : '') +
-      `<span class="hero-acct" title="${lbl} balance">` +
-      `<span class="hero-acct-lbl">${lbl}</span>` +
-      `<strong class="hero-acct-val blur-val">${fmt(v)}</strong>` +
-      `</span>`
-    ).join('');
-  }
+  if (splitEl) renderHeroMixBar(splitEl);
 
   if (isFoldOpen('hero-perf')) drawPerfHistory();
+}
+
+/** Stacked mix bar: segment width = share of PEA / Livret / PEE (/ cash) — a 1D pie. */
+function renderHeroMixBar(el) {
+  const parts = [
+    { key: 'pea', lbl: 'PEA', v: Math.max(0, +STATE.pea || 0) },
+    { key: 'livret', lbl: 'Livret A', v: Math.max(0, +STATE.livretA || 0) },
+    { key: 'pee', lbl: 'PEE', v: Math.max(0, +STATE.pee || 0) },
+  ];
+  if (STATE.checking) parts.push({ key: 'cash', lbl: 'Cash', v: Math.max(0, +STATE.checking || 0) });
+  const shown = parts.filter(p => p.v > 0);
+  if (!shown.length) {
+    el.innerHTML = '';
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  const total = shown.reduce((s, p) => s + p.v, 0) || 1;
+  const aria = shown.map(p => `${p.lbl} ${fmt(p.v)} (${Math.round((p.v / total) * 100)}%)`).join(', ');
+  el.innerHTML =
+    `<div class="hero-mix-bar" role="img" aria-label="Allocation: ${aria}">` +
+    shown.map(p =>
+      `<div class="hero-mix-seg" data-key="${p.key}" style="flex:${p.v} 1 0" title="${p.lbl}: ${fmt(p.v)} · ${Math.round((p.v / total) * 100)}%"></div>`
+    ).join('') +
+    `</div>` +
+    `<div class="hero-mix-legend">` +
+    shown.map(p =>
+      `<span class="hero-mix-item" title="${p.lbl}: ${fmt(p.v)}">` +
+      `<span class="hero-mix-dot" data-key="${p.key}" aria-hidden="true"></span>` +
+      `<span class="hero-mix-lbl">${p.lbl}</span>` +
+      `<strong class="hero-mix-val blur-val">${fmt(p.v)}</strong>` +
+      `<span class="hero-mix-pct">${Math.round((p.v / total) * 100)}%</span>` +
+      `</span>`
+    ).join('') +
+    `</div>`;
 }
 
 function monthBucket(txs) {
