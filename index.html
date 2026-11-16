@@ -561,8 +561,16 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
           <button type="button" data-perf-cum="cumulative" onclick="setPerfHistCum('cumulative')">Cumulative</button>
         </div>
       </div>
+      <div class="range-row" role="group" aria-label="History lookback" id="perf-hist-lookback" style="margin:0 0 10px">
+        <button type="button" data-perf-lb="6m" onclick="setPerfHistLookback('6m')">6M</button>
+        <button type="button" class="on" data-perf-lb="1y" onclick="setPerfHistLookback('1y')">1Y</button>
+        <button type="button" data-perf-lb="2y" onclick="setPerfHistLookback('2y')">2Y</button>
+        <button type="button" data-perf-lb="3y" onclick="setPerfHistLookback('3y')">3Y</button>
+        <button type="button" data-perf-lb="5y" onclick="setPerfHistLookback('5y')">5Y</button>
+        <button type="button" data-perf-lb="max" onclick="setPerfHistLookback('max')">Max</button>
+      </div>
       <div class="perf-hist-avg" id="perf-hist-avg" hidden>
-        <span id="perf-hist-avg-lbl">Average across bins</span>
+        <span id="perf-hist-avg-lbl">Avg / bin</span>
         <strong class="blur-val" id="perf-hist-avg-val">—</strong>
         <span id="perf-hist-total-wrap" hidden>
           <span>Total</span>
@@ -1095,6 +1103,7 @@ function mountDashboard() {
   }
   syncFolds();
   syncPerfHistButton();
+  syncPerfHistLookbackUI();
 }
 
 function setLockedUI(locked) {
@@ -1828,17 +1837,61 @@ function toggleFold(id) {
 
 let perfHistTab = localStorage.getItem('dashboard_perf_hist_tab') || 'overall';
 let perfHistCum = localStorage.getItem('dashboard_perf_hist_cum') === '1';
+const PERF_HIST_LOOKBACKS = [
+  { id: '6m', months: 6, label: '6M' },
+  { id: '1y', months: 12, label: '1Y' },
+  { id: '2y', months: 24, label: '2Y' },
+  { id: '3y', months: 36, label: '3Y' },
+  { id: '5y', months: 60, label: '5Y' },
+  { id: 'max', months: null, label: 'Max' },
+];
+let perfHistLookback = PERF_HIST_LOOKBACKS.some(x => x.id === localStorage.getItem('dashboard_perf_hist_lb'))
+  ? localStorage.getItem('dashboard_perf_hist_lb')
+  : '1y';
 // Default open; only stay closed if the user explicitly hid it.
 let perfHistoryOpen = localStorage.getItem('dashboard_perf_hist_open') !== '0';
 
+function perfHistMonthsPerBin() {
+  // Bin width still follows the hero “vs” window so the story matches the KPI.
+  if (heroVsMode === '3m') return 3;
+  if (heroVsMode === '1y') return 12;
+  return 1;
+}
+
+function perfHistEarliestMs() {
+  let earliest = Date.now();
+  const c = nwCandidates();
+  if (c.length) earliest = Math.min(earliest, c[0].at);
+  const txs = STATE.transactions || [];
+  if (txs.length) {
+    const oldest = txs[txs.length - 1];
+    if (oldest?.date) earliest = Math.min(earliest, +oldest.date);
+  }
+  return earliest;
+}
+
 function perfHistorySpec() {
-  if (heroVsMode === '3m') {
-    return { monthsPerBin: 3, bins: 8, btn: 'Last 8 × 3 months', note: 'Each bin = 3 calendar months (matches “vs 3 months”).' };
+  const monthsPerBin = perfHistMonthsPerBin();
+  const lb = PERF_HIST_LOOKBACKS.find(x => x.id === perfHistLookback) || PERF_HIST_LOOKBACKS[1];
+  let coverMonths = lb.months;
+  if (coverMonths == null) {
+    const spanMo = Math.ceil((Date.now() - perfHistEarliestMs()) / (30.4375 * 86400000));
+    coverMonths = Math.max(monthsPerBin, Math.min(120, spanMo || monthsPerBin));
   }
-  if (heroVsMode === '1y') {
-    return { monthsPerBin: 12, bins: 5, btn: 'Last 5 years', note: 'Each bin = one calendar year (matches “vs 1 year”).' };
-  }
-  return { monthsPerBin: 1, bins: 12, btn: 'Last 12 months', note: 'Each bin = one calendar month (matches “vs previous month”).' };
+  const bins = Math.max(1, Math.ceil(coverMonths / monthsPerBin));
+  const binNote = monthsPerBin === 12
+    ? 'Each bin = one calendar year (hero “vs 1 year”).'
+    : (monthsPerBin === 3
+      ? 'Each bin = 3 calendar months (hero “vs 3 months”).'
+      : 'Each bin = one calendar month (hero “vs previous month”).');
+  return {
+    monthsPerBin,
+    bins,
+    lookbackId: lb.id,
+    lookbackLabel: lb.label,
+    btn: lb.id === 'max' ? 'All history' : `Last ${lb.label}`,
+    note: `${binNote} Lookback ${lb.label}.`,
+  };
 }
 
 function syncPerfHistButton() {
@@ -1846,6 +1899,28 @@ function syncPerfHistButton() {
   if (!btn) return;
   const spec = perfHistorySpec();
   btn.textContent = (perfHistoryOpen ? 'Hide · ' : '') + spec.btn;
+}
+
+function syncPerfHistLookbackUI() {
+  document.querySelectorAll('[data-perf-lb]').forEach(btn => {
+    btn.classList.toggle('on', btn.getAttribute('data-perf-lb') === perfHistLookback);
+  });
+}
+
+function setPerfHistLookback(id) {
+  if (!PERF_HIST_LOOKBACKS.some(x => x.id === id)) return;
+  perfHistLookback = id;
+  try { localStorage.setItem('dashboard_perf_hist_lb', id); } catch (_) {}
+  syncPerfHistLookbackUI();
+  syncPerfHistButton();
+  drawPerfHistory();
+}
+
+function medianOf(nums) {
+  const a = nums.filter(v => v != null && isFinite(v)).slice().sort((x, y) => x - y);
+  if (!a.length) return null;
+  const mid = Math.floor(a.length / 2);
+  return a.length % 2 ? a[mid] : Math.round((a[mid - 1] + a[mid]) / 2);
 }
 
 function nwAtOrBefore(atMs) {
@@ -1952,19 +2027,23 @@ function drawPerfHistory() {
   const periodValues = bins.map(b => b[key]);
   const values = perfHistCum ? toCumulativeSeries(periodValues) : periodValues;
   const title = perfHistCum ? `${baseTitle} · cumulative` : baseTitle;
-  // Average always from per-period bins (meaningful in both modes).
+  // You → mean savings (controllable habit). Overall/Markets → median Δ (less skewed by crash/rally bins).
   const knownPeriod = periodValues.filter(v => v != null && isFinite(v));
-  const avg = knownPeriod.length
-    ? Math.round(knownPeriod.reduce((s, v) => s + v, 0) / knownPeriod.length)
-    : null;
-  const avgText = avg == null ? 'n/a' : (anonMode ? '•••' : fmtDelta(avg, null));
-  const avgLabel = `Avg / bin · ${avgText}`;
+  const useMedian = key !== 'you';
+  const center = useMedian
+    ? medianOf(knownPeriod)
+    : (knownPeriod.length ? Math.round(knownPeriod.reduce((s, v) => s + v, 0) / knownPeriod.length) : null);
+  const centerKind = useMedian ? 'Median' : 'Avg';
+  const centerChipLbl = useMedian ? 'Median Δ / bin' : 'Avg saved / bin';
+  const avgText = center == null ? 'n/a' : (anonMode ? '•••' : fmtDelta(center, null));
+  const avgLabel = `${centerKind} / bin · ${avgText}`;
   const total = knownPeriod.length
     ? Math.round(knownPeriod.reduce((s, v) => s + v, 0))
     : null;
   const totalText = total == null ? 'n/a' : (anonMode ? '•••' : fmtDelta(total, null));
-  // In cumulative mode the dashed guide would sit at avg/bin (wrong scale level) — hide it on the plot.
-  const showAvgGuide = !perfHistCum && avg != null;
+  // In cumulative mode the dashed guide would sit at center/bin (wrong scale level) — hide it on the plot.
+  const showAvgGuide = !perfHistCum && center != null;
+  const avg = center; // guide plugin + chip use this level
   const colors = values.map(v => {
     if (v == null) return 'rgba(139,154,171,0.35)';
     if (v > 0) return 'rgba(107,207,155,0.85)';
@@ -1978,13 +2057,13 @@ function drawPerfHistory() {
   const totalWrap = document.getElementById('perf-hist-total-wrap');
   const totalValEl = document.getElementById('perf-hist-total-val');
   if (avgChip && avgValEl) {
-    if (avg == null && total == null) {
+    if (center == null && total == null) {
       avgChip.hidden = true;
     } else {
       avgChip.hidden = false;
-      if (avgLbl) avgLbl.textContent = 'Avg / bin';
+      if (avgLbl) avgLbl.textContent = centerChipLbl;
       avgValEl.textContent = avgText;
-      avgValEl.className = 'blur-val ' + (avg == null ? 'flat' : deltaDir(avg));
+      avgValEl.className = 'blur-val ' + (center == null ? 'flat' : deltaDir(center));
       if (totalWrap && totalValEl) {
         totalWrap.hidden = !perfHistCum || total == null;
         totalValEl.textContent = totalText;
@@ -2102,7 +2181,7 @@ function drawPerfHistory() {
               return bar ? (bins[bar.dataIndex]?.label || '') : avgLabel;
             },
             label(c) {
-              if (c.datasetIndex === 1) return `Avg / bin: ${avgText}`;
+              if (c.datasetIndex === 1) return `${centerKind} / bin: ${avgText}`;
               if (c.raw == null) return `${title}: n/a`;
               const period = periodValues[c.dataIndex];
               const main = anonMode ? `${title}: •••` : `${title}: ${fmtDelta(c.raw, null)}`;
@@ -2132,12 +2211,16 @@ function drawPerfHistory() {
     btn.classList.toggle('on', btn.getAttribute('data-perf-hist') === perfHistTab);
   });
   syncPerfHistCumUI();
+  syncPerfHistLookbackUI();
   const note = document.getElementById('perf-hist-note');
   if (note) {
     const modeBit = perfHistCum ? 'Cumulative running total' : 'Per-period change';
+    const centerBit = useMedian
+      ? `median Δ / bin ${avgText}`
+      : `avg saved / bin ${avgText}`;
     note.textContent = knownPeriod.length
-      ? `${spec.note} · ${modeBit} · avg / bin ${avgText}` + (perfHistCum ? ` · total ${totalText}` : '') + '.'
-      : `${spec.note} · Need more data in these bins before an average can be drawn.`;
+      ? `${spec.note} · ${modeBit} · ${centerBit}` + (perfHistCum ? ` · total ${totalText}` : '') + '.'
+      : `${spec.note} · Need more data in these bins before a center line can be drawn.`;
   }
 }
 
