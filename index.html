@@ -2024,6 +2024,7 @@ function buildPerfHistoryBins(txs) {
     const to = Math.min(Date.now(), endExclusive.getTime() - 1);
     const startSnap = nwAtOrBefore(from - 1) || nwAtOrBefore(from);
     const endSnap = nwAtOrBefore(to);
+    const nwEnd = endSnap && endSnap.nw > 0 ? Math.round(endSnap.nw) : null;
     const overall = (startSnap && endSnap) ? Math.round(endSnap.nw - startSnap.nw) : null;
     const you = Math.round(walletNetInWindow(txs || STATE.transactions, from, to).net);
     const markets = overall != null ? Math.round(overall - you) : null;
@@ -2035,7 +2036,7 @@ function buildPerfHistoryBins(txs) {
     } else {
       label = cursor.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
     }
-    bins.push({ label, from, to, overall, you, markets });
+    bins.push({ label, from, to, overall, you, markets, nwEnd });
     cursor = new Date(cursor.getFullYear(), cursor.getMonth() - spec.monthsPerBin, 1);
   }
   return { spec, bins: bins.reverse() };
@@ -2067,7 +2068,7 @@ function syncPerfHistCumUI() {
   });
 }
 
-/** Running sum of period values; null bins contribute 0 but stay null until the first known value. */
+/** Running sum of period values; null bins keep the last sum once started. */
 function toCumulativeSeries(periodValues) {
   let sum = 0;
   let started = false;
@@ -2081,6 +2082,15 @@ function toCumulativeSeries(periodValues) {
   });
 }
 
+/** Absolute NW at each bin end; forward-fill so gaps don’t drop the level. */
+function toWealthLevelSeries(bins) {
+  let last = null;
+  return bins.map(b => {
+    if (b.nwEnd != null && isFinite(b.nwEnd)) last = b.nwEnd;
+    return last;
+  });
+}
+
 function drawPerfHistory() {
   const canvas = document.getElementById('perfHistChart');
   if (!canvas) return;
@@ -2088,10 +2098,16 @@ function drawPerfHistory() {
 
   const { spec, bins } = buildPerfHistoryBins(STATE.transactions);
   const key = perfHistTab === 'you' ? 'you' : (perfHistTab === 'markets' ? 'markets' : 'overall');
-  const baseTitle = key === 'you' ? 'You (controllable)' : (key === 'markets' ? 'Markets (non-controllable)' : 'Overall wealth change');
   const periodValues = bins.map(b => b[key]);
-  const values = perfHistCum ? toCumulativeSeries(periodValues) : periodValues;
-  const title = perfHistCum ? `${baseTitle} · cumulative` : baseTitle;
+  // Overall cumulative = wealth level (ends near current NW). You/Markets stay running Δ sums.
+  const overallAsLevel = perfHistCum && key === 'overall';
+  const values = overallAsLevel
+    ? toWealthLevelSeries(bins)
+    : (perfHistCum ? toCumulativeSeries(periodValues) : periodValues);
+  const baseTitle = key === 'you'
+    ? 'You (controllable)'
+    : (key === 'markets' ? 'Markets (non-controllable)' : (overallAsLevel ? 'Net worth' : 'Overall wealth change'));
+  const title = perfHistCum && !overallAsLevel ? `${baseTitle} · cumulative` : baseTitle;
   // You → mean savings (controllable habit). Overall/Markets → median Δ (less skewed by crash/rally bins).
   const knownPeriod = periodValues.filter(v => v != null && isFinite(v));
   const useMedian = key !== 'you';
@@ -2102,15 +2118,29 @@ function drawPerfHistory() {
   const centerChipLbl = useMedian ? 'Median Δ / bin' : 'Avg saved / bin';
   const avgText = center == null ? 'n/a' : (anonMode ? '•••' : fmtDelta(center, null));
   const avgLabel = `${centerKind} / bin · ${avgText}`;
-  const total = knownPeriod.length
+  const flowTotal = knownPeriod.length
     ? Math.round(knownPeriod.reduce((s, v) => s + v, 0))
     : null;
-  const totalText = total == null ? 'n/a' : (anonMode ? '•••' : fmtDelta(total, null));
+  const levelNow = overallAsLevel
+    ? (values.filter(v => v != null && isFinite(v)).slice(-1)[0] ?? null)
+    : null;
+  const total = overallAsLevel ? levelNow : flowTotal;
+  const totalText = total == null
+    ? 'n/a'
+    : (anonMode ? '•••' : (overallAsLevel ? fmt(total) : fmtDelta(total, null)));
+  const totalChipLbl = overallAsLevel ? 'Now' : 'Total';
   // In cumulative mode the dashed guide would sit at center/bin (wrong scale level) — hide it on the plot.
   const showAvgGuide = !perfHistCum && center != null;
   const avg = center; // guide plugin + chip use this level
-  const colors = values.map(v => {
+  const colors = values.map((v, i) => {
     if (v == null) return 'rgba(139,154,171,0.35)';
+    if (overallAsLevel) {
+      const d = periodValues[i];
+      if (d == null) return 'rgba(126,160,211,0.75)';
+      if (d > 0) return 'rgba(107,207,155,0.85)';
+      if (d < 0) return 'rgba(232,138,138,0.85)';
+      return 'rgba(126,160,211,0.75)';
+    }
     if (v > 0) return 'rgba(107,207,155,0.85)';
     if (v < 0) return 'rgba(232,138,138,0.85)';
     return 'rgba(139,154,171,0.55)';
@@ -2131,8 +2161,10 @@ function drawPerfHistory() {
       avgValEl.className = 'blur-val ' + (center == null ? 'flat' : deltaDir(center));
       if (totalWrap && totalValEl) {
         totalWrap.hidden = !perfHistCum || total == null;
+        const totalLbl = totalWrap.querySelector('span:not([id])');
+        if (totalLbl) totalLbl.textContent = totalChipLbl;
         totalValEl.textContent = totalText;
-        totalValEl.className = 'blur-val ' + (total == null ? 'flat' : deltaDir(total));
+        totalValEl.className = 'blur-val ' + (overallAsLevel ? 'flat' : (total == null ? 'flat' : deltaDir(total)));
       }
     }
   }
@@ -2249,7 +2281,8 @@ function drawPerfHistory() {
               if (c.datasetIndex === 1) return `${centerKind} / bin: ${avgText}`;
               if (c.raw == null) return `${title}: n/a`;
               const period = periodValues[c.dataIndex];
-              const main = anonMode ? `${title}: •••` : `${title}: ${fmtDelta(c.raw, null)}`;
+              const rawTxt = overallAsLevel ? fmt(c.raw) : fmtDelta(c.raw, null);
+              const main = anonMode ? `${title}: •••` : `${title}: ${rawTxt}`;
               if (perfHistCum && period != null && isFinite(period) && !anonMode) {
                 return `${main} · period ${fmtDelta(period, null)}`;
               }
@@ -2279,12 +2312,17 @@ function drawPerfHistory() {
   syncPerfHistLookbackUI();
   const note = document.getElementById('perf-hist-note');
   if (note) {
-    const modeBit = perfHistCum ? 'Cumulative running total' : 'Per-period change';
+    const modeBit = overallAsLevel
+      ? 'Wealth level at each period end'
+      : (perfHistCum ? 'Cumulative running total' : 'Per-period change');
     const centerBit = useMedian
       ? `median Δ / bin ${avgText}`
       : `avg saved / bin ${avgText}`;
+    const endBit = perfHistCum
+      ? (overallAsLevel ? ` · now ${totalText}` : ` · total ${totalText}`)
+      : '';
     note.textContent = knownPeriod.length
-      ? `${spec.note} · ${modeBit} · ${centerBit}` + (perfHistCum ? ` · total ${totalText}` : '') + '.'
+      ? `${spec.note} · ${modeBit} · ${centerBit}${endBit}.`
       : `${spec.note} · Need more data in these bins before a center line can be drawn.`;
   }
 }
