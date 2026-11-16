@@ -61,6 +61,9 @@ const required = [
   ['offline never cached', /meta\.source !== 'ai'/],
   ['asOf local day', /asOf:\s*ctx\.today/],
   ['cache key v11+', /dashboard_ai_checkin_v1[1-9]/],
+  ['wealth perf split', /function computeWealthPerfSplit\(/],
+  ['hero perf you/markets', /id="hero-perf-you"/],
+  ['controllable in dossier', /controllablePerfEur/],
 ];
 
 for (const [name, re] of required) {
@@ -228,6 +231,10 @@ if (snap && Array.isArray(snap.transactions)) {
 if (/labeledMoneyMovements/.test(html) && /portfolioMoveLikelyDominatesWealthChange/.test(html)) {
   ok('prompt-life-and-markets');
 } else fail('prompt-life-and-markets');
+
+if (/controllablePerfEur \(You\)|controllablePerfEur/.test(html) && /nonControllablePerfEur/.test(html)) {
+  ok('prompt-you-vs-markets');
+} else fail('prompt-you-vs-markets');
 
 // Output
 for (const name of oks) console.log(`OK  ${name}`);

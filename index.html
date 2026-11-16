@@ -162,6 +162,27 @@ body:not(.locked) #unlock-overlay{display:none!important}
 }
 .hero-delta .hero-arrow{font-size:1.05em;line-height:1}
 .hero-delta.flat{color:var(--muted)}
+.hero-perf{
+  position:relative;z-index:1;
+  display:flex;flex-wrap:wrap;gap:14px 28px;
+  margin:10px 0 18px;
+  padding:0;
+}
+.hero-perf[hidden]{display:none!important}
+.hero-perf > div{min-width:0}
+.hero-perf span{
+  display:block;
+  font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;
+}
+.hero-perf strong{
+  display:block;margin-top:3px;
+  font-family:var(--mono);font-size:15px;font-weight:600;
+  color:var(--muted);
+}
+.hero-perf strong.up{color:var(--ok)}
+.hero-perf strong.down{color:var(--bad)}
+.hero-perf strong.flat{color:var(--muted)}
 .hero-vs{
   display:inline-flex;align-items:center;
 }
@@ -307,7 +328,7 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .modal-actions .btn{flex:1;text-align:center;padding:12px}
 .finary-box{margin-bottom:14px;padding:10px 12px;border-radius:10px;border:1px solid rgba(126,160,211,.3);background:rgba(61,96,143,.2);font-size:12px}
 .finary-wait{margin-bottom:14px;padding:10px 12px;border-radius:10px;border:1px solid rgba(232,196,106,.3);background:var(--gold-dim);font-size:12px;color:var(--gold)}
-body.anon .blur-val,body.anon .hero-amount,body.anon .hero-delta,body.anon .hero-split strong,body.anon .stat-val,body.anon .cat-amt,body.anon .feed-amt,body.anon .cat-track,body.anon #ai-body,body.anon .chart-wrap,body.anon .tab-boost{filter:blur(12px)!important;opacity:.15!important;user-select:none!important;pointer-events:none!important}
+body.anon .blur-val,body.anon .hero-amount,body.anon .hero-delta,body.anon .hero-perf strong,body.anon .hero-split strong,body.anon .stat-val,body.anon .cat-amt,body.anon .feed-amt,body.anon .cat-track,body.anon #ai-body,body.anon .chart-wrap,body.anon .tab-boost{filter:blur(12px)!important;opacity:.15!important;user-select:none!important;pointer-events:none!important}
 body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
 .spin{display:inline-block;animation:spin .9s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -424,7 +445,17 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
           <option value="check">vs last check</option>
         </select>
       </label>
-</div>
+    </div>
+    <div class="hero-perf" id="hero-perf" hidden>
+      <div title="Wallet income − spend over the same comparison window — what you control">
+        <span>You</span>
+        <strong class="blur-val flat" id="hero-perf-you">—</strong>
+      </div>
+      <div title="Wealth move not explained by wallet cashflow — mostly PEA mark-to-market and other revaluations">
+        <span>Markets</span>
+        <strong class="blur-val flat" id="hero-perf-markets">—</strong>
+      </div>
+    </div>
     <div class="hero-split" id="hero-split"></div>
     <div class="hero-cta">
       <button class="btn btn-primary" type="button" onclick="refreshAll()">Refresh live data</button>
@@ -1433,9 +1464,50 @@ function computeHeroNwBoost() {
   };
 }
 
+/** Wallet income − spend inside [fromAt, toAt] — controllable cashflow. */
+function walletNetInWindow(txs, fromAt, toAt = Date.now()) {
+  const from = +fromAt || 0;
+  const to = +toAt || Date.now();
+  let inc = 0, exp = 0, n = 0;
+  (txs || []).forEach(t => {
+    if (!t?.date) return;
+    const ts = +t.date;
+    if (ts < from || ts > to) return;
+    if (t.category === 'Month progress bar' || t.category === 'Month progress bar compensation') return;
+    n++;
+    if (isIncomeTx(t)) inc += Math.abs(+t.amount || 0);
+    else if (isExpenseTx(t)) exp += Math.abs(+t.amount || 0);
+  });
+  return { net: inc - exp, inc, exp, n, from, to };
+}
+
+/**
+ * Split the hero wealth delta into controllable (you / wallet) vs residual markets.
+ * Residual ≈ PEA mark-to-market + Livret/other revaluations + timing noise — not day-to-day choices.
+ */
+function computeWealthPerfSplit(hero, txs) {
+  if (!hero || hero.pending || !(hero.baseline?.at > 0) || hero.amount == null) return null;
+  const flow = walletNetInWindow(txs, hero.baseline.at);
+  const controllable = Math.round(flow.net);
+  const wealthDelta = Math.round(hero.amount);
+  const markets = Math.round(wealthDelta - controllable);
+  return {
+    wealthDelta,
+    controllable,
+    markets,
+    controllableDir: deltaDir(controllable),
+    marketsDir: deltaDir(markets),
+    windowFrom: hero.baseline.at,
+    windowLabel: hero.baseline.label || null,
+    windowWhen: hero.baseline.when || null,
+    flow,
+  };
+}
+
 /** Shared facts for tabs + overview (not shown in the hero). */
 function computeBoosts(txs) {
-  const out = { hero: computeHeroNwBoost(), pea: null, livret: null, spend: null, staging: null, overview: [] };
+  const out = { hero: computeHeroNwBoost(), perfSplit: null, pea: null, livret: null, spend: null, staging: null, overview: [] };
+  out.perfSplit = computeWealthPerfSplit(out.hero, txs || []);
   const cost = STATE.monthlyCostBasis || 0;
   const pea = STATE.pea || 0;
   const livret = STATE.livretA || 0;
@@ -1589,6 +1661,26 @@ function renderHero() {
       deltaEl.innerHTML =
         `<span class="hero-arrow" aria-hidden="true">${arrow}</span>` +
         `<span>${fmtDelta(h.amount, h.pct)}</span>`;
+    }
+  }
+
+  const perfEl = document.getElementById('hero-perf');
+  const youEl = document.getElementById('hero-perf-you');
+  const mktEl = document.getElementById('hero-perf-markets');
+  const split = boosts.perfSplit;
+  if (perfEl && youEl && mktEl) {
+    if (!split) {
+      perfEl.hidden = true;
+      youEl.textContent = '—';
+      mktEl.textContent = '—';
+      youEl.className = 'blur-val flat';
+      mktEl.className = 'blur-val flat';
+    } else {
+      perfEl.hidden = false;
+      youEl.textContent = fmtDelta(split.controllable, null);
+      mktEl.textContent = fmtDelta(split.markets, null);
+      youEl.className = 'blur-val ' + split.controllableDir;
+      mktEl.className = 'blur-val ' + split.marketsDir;
     }
   }
 
@@ -3128,16 +3220,20 @@ function buildCheckinDossier(txs) {
     balance: Math.round(w.balance),
   }));
 
-  const wealthDelta = hero ? hero.amount : null;
-  const residualVsCashflow = wealthDelta != null ? Math.round(wealthDelta - saved) : null;
+  // Prefer the same hero-window split shown on screen; fall back to calendar-month residual.
+  const perfSplit = boosts.perfSplit || computeWealthPerfSplit(hero, all);
+  const wealthDelta = perfSplit ? perfSplit.wealthDelta : (hero ? Math.round(hero.amount) : null);
+  const controllable = perfSplit ? perfSplit.controllable : Math.round(saved);
+  const residualVsCashflow = wealthDelta != null ? Math.round(wealthDelta - controllable) : null;
   const portfolioLikelyDominant = wealthDelta != null
-    && Math.abs(wealthDelta) >= Math.max(250, Math.abs(saved) * 1.25)
-    && Math.abs(residualVsCashflow) >= Math.abs(saved);
+    && Math.abs(wealthDelta) >= Math.max(250, Math.abs(controllable) * 1.25)
+    && Math.abs(residualVsCashflow) >= Math.abs(controllable);
 
   return {
     today: localDayStr(new Date()),
     heroVsMode,
     tax, heldYrs, exp, inc, prevExp, prevInc, pace, hero, livretGap, boosts,
+    perfSplit,
     catNow: catNow.slice(0, 14),
     unusualCats,
     topExpenses,
@@ -3153,11 +3249,13 @@ function buildCheckinDossier(txs) {
     holdings,
     livretWd,
     wealthDecomposition: {
-      wealthDeltaEur: wealthDelta != null ? Math.round(wealthDelta) : null,
+      wealthDeltaEur: wealthDelta,
       wealthDeltaPct: hero && hero.pct != null ? +hero.pct.toFixed(2) : null,
-      vs: hero?.baseline?.label || null,
-      baselineWhen: hero?.baseline?.when || null,
-      note: 'Hero comparison window may not equal the calendar month; householdNetThisMonthEur is calendar-month wallet flow only.',
+      vs: hero?.baseline?.label || perfSplit?.windowLabel || null,
+      baselineWhen: hero?.baseline?.when || perfSplit?.windowWhen || null,
+      note: 'controllablePerfEur = wallet income−spend over the same hero comparison window (what he controls). nonControllablePerfEur = wealth delta minus that (mostly PEA mark-to-market / revaluations). householdNetThisMonthEur remains calendar-month only.',
+      controllablePerfEur: controllable,
+      nonControllablePerfEur: residualVsCashflow,
       householdNetThisMonthEur: Math.round(saved),
       incomeThisMonthEur: Math.round(inc),
       spendThisMonthEur: Math.round(exp),
@@ -3165,8 +3263,8 @@ function buildCheckinDossier(txs) {
       residualLikelyMarkToMarketOrOtherEur: residualVsCashflow,
       portfolioMoveLikelyDominatesWealthChange: portfolioLikelyDominant,
       reading: portfolioLikelyDominant
-        ? 'Wealth move is larger than household net this month — PEA/market mark-to-market (or account revaluation) is likely the main driver; spend is secondary colour.'
-        : 'Household cashflow may explain a meaningful share of the wealth move; still check PEA marks.',
+        ? 'Non-controllable (markets/revaluations) dominates the wealth move — lead with PEA mark-to-market; treat wallet saving as secondary colour.'
+        : 'Controllable wallet cashflow explains a meaningful share of the wealth move; still mention markets if nonControllablePerfEur is material.',
     },
     accounts: {
       netWorth: Math.round(netWorth()),
@@ -3198,8 +3296,10 @@ function localCheckinText(ctx) {
       : `You're up **${fmtDelta(hero.amount, hero.pct)}** vs ${hero.baseline?.label || 'last period'}${hero.baseline?.when ? ` (${hero.baseline.when})` : ''}, at **${fmt(nw)}**.`)
     : `Net worth is **${fmt(nw)}** — still building a clean comparison baseline.`;
 
-  const marketBit = decomp.portfolioMoveLikelyDominatesWealthChange
-    ? ` Most of that move (~**${fmt(Math.abs(decomp.residualLikelyMarkToMarketOrOtherEur || 0))}** after accounting for this month’s **${fmt(decomp.householdNetThisMonthEur)}** household net) looks like PEA/market mark-to-market rather than day-to-day spend.`
+  const youAmt = decomp.controllablePerfEur;
+  const mktAmt = decomp.nonControllablePerfEur;
+  const marketBit = (youAmt != null && mktAmt != null)
+    ? ` Of that, **you** (controllable wallet net) are at **${fmtDelta(youAmt, null)}**, and **markets** (non-controllable) at **${fmtDelta(mktAmt, null)}**.`
     : ` This month’s household net is **${fmt(decomp.householdNetThisMonthEur)}** (**${fmt(ctx.inc)}** in / **${fmt(ctx.exp)}** out).`;
 
   const memoHits = (ctx.labeledAnchors || []).slice(0, 5);
@@ -3296,7 +3396,7 @@ function buildCheckinPrompt(ctx) {
     'OUTPUT (strict):',
     '- 2 short paragraphs of continuous prose (optional tiny third for the next step). NO bullets, NO numbered lists, NO headings, NO emoji.',
     '- Bold a few key € with **like this**.',
-    '- Start from the wealth move he sees. Use wealthDecomposition: if portfolioMoveLikelyDominatesWealthChange is true, lead with mark-to-market / PEA as the main reason for the € change, then layer household life/spend as colour — do NOT pretend Leisure €200 caused a €1500+ NW drop.',
+    '- Start from the wealth move he sees. Use wealthDecomposition.controllablePerfEur (You) vs nonControllablePerfEur (Markets). If portfolioMoveLikelyDominatesWealthChange is true, lead with markets/PEA mark-to-market, then layer controllable saving + life/spend as colour — do NOT pretend Leisure €200 caused a €1500+ NW drop.',
     '- LIFE EVENTS: first read labeledMoneyMovements, incomeWithMemos, categoriesNotOnAnyBudget, and unbudgetedOrOutOfBandExpenses. Wallet’s “Out of budget” (and any category on no budget) is where one-offs often sit — even if MoM totals barely changed. Quote concrete memos/categories when they explain the month. Never invent people/events absent from those strings.',
     '- Also skim expensesWithMemos, budgets[].sampleTx, and allExpensesThisMonth for supporting colour.',
     '- Use Google Search for recent equity/market or major news only when it helps explain a portfolio-dominated move between the baseline date and asOf (' + ctx.today + '). Prefer concrete market colour (indices, mega-cap/tech, rates, elections) over vague vibes. Do not moralize politics.',
