@@ -458,8 +458,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
     </div>
     <div class="hero-split" id="hero-split"></div>
     <div class="hero-cta">
-      <button class="btn btn-primary" type="button" onclick="refreshAll()">Refresh live data</button>
-      <button class="btn" type="button" onclick="setTab('spend')">This month</button>
+      <button class="btn" type="button" onclick="goThisMonth()">This month</button>
     </div>
   </section>
 
@@ -1823,7 +1822,7 @@ function syncChartPanesUI() {
   Object.keys(chartPaneMode).forEach(group => setChartPane(group, chartPaneMode[group], false));
 }
 
-function setTab(id, persist = true) {
+function setTab(id, persist = true, { scroll = false } = {}) {
   activeTab = id;
   if (persist) localStorage.setItem('dashboard_tab', id);
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -1833,6 +1832,15 @@ function setTab(id, persist = true) {
     panel.classList.toggle('on', panel.id === 'panel-' + id);
   });
   requestAnimationFrame(() => {
+    // Hero is tall — without scrolling, a tab jump from the hero CTA looks like a dead button.
+    if (scroll) {
+      const tabs = document.querySelector('#app-shell nav.tabs') || document.querySelector('nav.tabs');
+      const panel = document.getElementById('panel-' + id);
+      const anchor = tabs || panel;
+      if (anchor && typeof anchor.scrollIntoView === 'function') {
+        anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
     if (id === 'overview') {
       syncProjControlsUI();
       if (chartPaneMode.wealth === 'future') drawNwProjection();
@@ -1849,6 +1857,11 @@ function setTab(id, persist = true) {
       else drawLivretChart();
     }
   });
+}
+
+/** Hero shortcut: open Spend and scroll it into view (same as the Spend tab). */
+function goThisMonth() {
+  setTab('spend', true, { scroll: true });
 }
 function parseLivretDate(dmy) {
   if (!dmy) return null;

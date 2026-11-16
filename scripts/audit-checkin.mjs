@@ -64,6 +64,7 @@ const required = [
   ['wealth perf split', /function computeWealthPerfSplit\(/],
   ['hero perf you/markets', /id="hero-perf-you"/],
   ['controllable in dossier', /controllablePerfEur/],
+  ['goThisMonth scrolls', /function goThisMonth\(/],
 ];
 
 for (const [name, re] of required) {
