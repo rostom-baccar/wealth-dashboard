@@ -394,6 +394,11 @@ body:not(.locked) #unlock-overlay{display:none!important}
   display:flex;flex-direction:column;flex:1 1 auto;min-height:0;
   height:100%;max-height:none;
 }
+.spend-ai{margin:0 0 16px}
+.spend-ai-brief{
+  flex:none;height:auto;max-height:none;
+}
+body.anon #spend-ai-body{filter:blur(12px)!important;opacity:.15!important;user-select:none!important;pointer-events:none!important}
 .doing-ai-head{
   display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
   margin-bottom:10px;flex-shrink:0;
@@ -699,6 +704,16 @@ body.anon .inc-chip strong,body.anon .budget-row,body.anon .hold-row{filter:blur
         </div>
       </div>
       <div class="fold-body">
+        <aside class="spend-ai" aria-label="Spend commentary">
+          <div class="ai-brief spend-ai-brief" id="spend-ai-box">
+            <div class="doing-ai-head">
+              <span class="ai-tag">Spend note</span>
+              <button type="button" class="btn" id="spend-ai-refresh-btn" onclick="forceSpendAiRefresh()">Refresh note</button>
+            </div>
+            <div id="spend-ai-body"><span class="ai-loading">Open Spend to load a note on this month’s spending…</span></div>
+            <p class="ai-status" id="spend-ai-status"></p>
+          </div>
+        </aside>
         <div class="month-grid">
           <div>
             <div class="stat-pair">
@@ -2509,6 +2524,9 @@ function setTab(id, persist = true, { scroll = false } = {}) {
       else drawNwHistory();
       if (isFoldOpen('hero-perf')) drawPerfHistory();
     }
+    if (id === 'spend' && vaultUnlocked) {
+      generateSpendAiSummary(STATE.transactions, false).catch(() => {});
+    }
     if (id === 'pea') {
       syncProjControlsUI();
       if (chartPaneMode.pea === 'future') drawPeaProjection();
@@ -3649,6 +3667,7 @@ function setAiCache(text, meta = {}) {
 }
 function clearAiCache() {
   try { localStorage.removeItem(aiCacheKey()); } catch (_) {}
+  clearSpendAiCache();
 }
 function setCheckinStatus(msg, tone = '', detail = '') {
   const el = document.getElementById('ai-status');
@@ -4277,6 +4296,228 @@ async function forceAiRefresh() {
   await generateAiSummary(STATE.transactions, true);
 }
 
+/* ── Spend-tab AI note (spending only; separate cache from hero check-in) ── */
+
+function spendAiCacheKey() { return 'dashboard_ai_spend_v1'; }
+
+function spendDataFingerprint() {
+  const month = monthBucket(STATE.transactions || []);
+  let sum = 0;
+  month.forEach(t => { sum += Math.abs(+t.amount || 0); });
+  return [
+    parisMonthKey(),
+    month.length,
+    Math.round(sum),
+    (STATE.budgets || []).length,
+    STATE.lastSnapshotSync || '',
+  ].join('|');
+}
+
+function getSpendAiCache() {
+  try {
+    const raw = localStorage.getItem(spendAiCacheKey());
+    if (!raw) return null;
+    const cached = JSON.parse(raw);
+    if (!cached?.text || cached.source !== 'ai') return null;
+    if (!cached.fp || cached.fp !== spendDataFingerprint()) return null;
+    return cached;
+  } catch { return null; }
+}
+
+function setSpendAiCache(text) {
+  if (!text) return;
+  try {
+    localStorage.setItem(spendAiCacheKey(), JSON.stringify({
+      text,
+      at: Date.now(),
+      source: 'ai',
+      fp: spendDataFingerprint(),
+    }));
+  } catch {}
+}
+
+function clearSpendAiCache() {
+  try { localStorage.removeItem(spendAiCacheKey()); } catch (_) {}
+}
+
+function setSpendAiStatus(msg, tone = '', detail = '') {
+  const el = document.getElementById('spend-ai-status');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.dataset.tone = tone || '';
+  if (detail) el.title = detail;
+  else el.removeAttribute('title');
+}
+
+function localSpendText(ctx) {
+  const saved = Math.round(ctx.inc - ctx.exp);
+  const top = (ctx.catNow || []).slice(0, 3)
+    .map(c => `**${c.name}** (${fmt(c.amount)})`)
+    .join(', ');
+  const over = (ctx.budgetRows || []).filter(b => b.over > 0).slice(0, 2);
+  const unb = (ctx.unbudgetedCats || []).slice(0, 2);
+  const bits = [
+    `This month you've spent **${fmt(ctx.exp)}** against **${fmt(ctx.inc)}** in — surplus **${fmtDelta(saved, null)}**` +
+    (ctx.prevExp != null ? ` (last month spend was **${fmt(ctx.prevExp)}**)` : '') + '.',
+  ];
+  if (top) bits.push(` Biggest buckets: ${top}.`);
+  if (over.length) {
+    bits.push(` Budgets over: ${over.map(b => `**${b.name}** (+${fmt(b.over)})`).join(', ')}.`);
+  }
+  if (unb.length) {
+    bits.push(` Off-budget: ${unb.map(c => `**${c.name}** (${fmt(c.eur)})`).join(', ')}.`);
+  }
+  const why = ctx._offlineReason === 'quota'
+    ? ' Live AI paused (quota).'
+    : ctx._offlineReason === 'cooldown'
+      ? ' Live AI on cooldown.'
+      : ' Offline note — add a Gemini key in Settings for a live read.';
+  bits.push(why);
+  bits.push(' Next: trim one hot category or keep pace so staging still feeds the PEA.');
+  return bits.join('');
+}
+
+function buildSpendPrompt(ctx) {
+  const dossier = {
+    asOf: ctx.today,
+    month: parisMonthKey(),
+    cashflowThisMonth: {
+      income: Math.round(ctx.inc),
+      spend: Math.round(ctx.exp),
+      surplus: Math.round(ctx.inc - ctx.exp),
+    },
+    cashflowLastMonth: {
+      income: Math.round(ctx.prevInc),
+      spend: Math.round(ctx.prevExp),
+      surplus: Math.round(ctx.prevInc - ctx.prevExp),
+    },
+    categoriesThisMonth: (ctx.catNow || []).slice(0, 14).map(c => ({
+      name: c.name, eur: Math.round(c.amount),
+    })),
+    unusualSpendVsLastMonth: (ctx.unusualCats || []).slice(0, 8).map(c => ({
+      name: c.name,
+      eur: Math.round(c.amount),
+      lastMonthEur: Math.round(c.prevAmt),
+      deltaEur: Math.round(c.delta),
+    })),
+    categoriesNotOnAnyBudget: (ctx.unbudgetedCats || []).slice(0, 8),
+    budgets: (ctx.budgetRows || []).slice(0, 12).map(b => ({
+      name: b.name,
+      spent: b.spent,
+      limit: b.limit,
+      over: b.over,
+      pct: b.pct,
+    })),
+    largestExpenses: (ctx.topExpenses || []).slice(0, 12),
+    expensesWithMemos: (ctx.memoExpenses || []).slice(0, 12),
+    labeledMoneyMovements: (ctx.labeledAnchors || []).slice(0, 10),
+    moneySystem: 'Goal: protect monthly surplus → Bourso LDDS staging → Livret €8k floor → PEA. Comment on spending only.',
+  };
+
+  return [
+    'You are Rostom’s spend reviewer — a sharp, warm friend looking only at this month’s wallet spending. Not a wealth coach; not markets.',
+    '',
+    'OUTPUT (strict):',
+    '- ONE short paragraph. NO bullets, lists, headings, or emoji.',
+    '- Bold a few key € / category names with **like this**.',
+    '- Focus on surplus, hot categories, budget pressure, and odd memos from the dossier. Never invent transactions.',
+    '- Compare lightly to last month when useful.',
+    '- End with one concrete spend next step (cut, cap, or keep). Not legal/tax advice.',
+    '- Do NOT talk about PEA mark-to-market, net worth residual, or stock news.',
+    '',
+    'PRIVATE SPEND DOSSIER JSON:',
+    JSON.stringify(dossier),
+  ].join('\n');
+}
+
+let spendAiRequestSerial = 0;
+let spendAiGenerating = false;
+
+async function generateSpendAiSummary(txs, force = false) {
+  const el = document.getElementById('spend-ai-body');
+  if (!el) return;
+  const cached = getSpendAiCache();
+  if (!force && cached && (Date.now() - cached.at) < 86400000) {
+    el.innerHTML = renderAiHtml(cached.text);
+    setSpendAiStatus('Cached', 'ok');
+    return;
+  }
+
+  const reqId = ++spendAiRequestSerial;
+  spendAiGenerating = true;
+  const btn = document.getElementById('spend-ai-refresh-btn');
+  if (btn) { btn.textContent = 'Refreshing…'; btn.disabled = true; }
+  el.innerHTML = `<span class="ai-loading">Reading this month’s spend…</span>`;
+  setSpendAiStatus('Calling Gemini…', 'warn');
+
+  const stillCurrent = () => reqId === spendAiRequestSerial;
+  const ctx = buildCheckinDossier(txs);
+  const apiKey = (localStorage.getItem(LS_GEMINI) || '').trim();
+
+  const finishLocal = (statusMsg, offlineReason = 'offline') => {
+    if (!stillCurrent()) return;
+    ctx._offlineReason = offlineReason;
+    el.innerHTML = renderAiHtml(localSpendText(ctx));
+    setSpendAiStatus(statusMsg || 'Offline · add Gemini key in Settings', 'bad');
+  };
+
+  try {
+    if (!apiKey) {
+      finishLocal('Offline · no Gemini key', 'offline');
+      return;
+    }
+    const coolUntil = getGeminiCooldownUntil();
+    if (!force && coolUntil > Date.now()) {
+      finishLocal(`Quota · ~${geminiCooldownRemainingMin()}m`, 'cooldown');
+      return;
+    }
+
+    const prompt = buildSpendPrompt(ctx);
+    let result = null;
+    const errors = [];
+    for (const model of GEMINI_CHECKIN_MODELS) {
+      if (!stillCurrent()) break;
+      try {
+        // No Google Search — spend commentary is ledger-only.
+        result = await callGeminiCheckin(apiKey, prompt, { withSearch: false, model });
+        break;
+      } catch (e) {
+        errors.push(`${model}: ${e.message}`);
+        if (isGeminiFatalError(e)) throw e;
+      }
+    }
+    if (!stillCurrent()) {
+      // superseded
+    } else if (!result) {
+      throw new Error(errors.slice(0, 3).join(' · ') || 'all attempts failed');
+    } else {
+      clearGeminiCooldown();
+      el.innerHTML = renderAiHtml(result.text);
+      setSpendAiCache(result.text);
+      setSpendAiStatus(`Live · ${result.model}`, 'ok');
+    }
+  } catch (e) {
+    console.warn('Spend AI failed:', e.message);
+    if (isGeminiQuotaError(e)) {
+      setGeminiCooldown();
+      finishLocal(`Quota · ~${geminiCooldownRemainingMin()}m`, 'quota');
+    } else {
+      finishLocal('AI failed · offline', 'offline');
+    }
+  } finally {
+    if (stillCurrent()) {
+      spendAiGenerating = false;
+      if (btn) { btn.textContent = 'Refresh note'; btn.disabled = false; }
+    }
+  }
+}
+
+async function forceSpendAiRefresh() {
+  if (!vaultUnlocked) { showUnlockModal(); return; }
+  clearSpendAiCache();
+  await generateSpendAiSummary(STATE.transactions, true);
+}
+
 (async () => {
   vaultUnlocked = false;
   clearSensitiveState();
@@ -4287,6 +4528,9 @@ async function forceAiRefresh() {
     await fetchSavings();
     renderAll(STATE.transactions);
     generateAiSummary(STATE.transactions, false).catch(() => {});
+    if (activeTab === 'spend') {
+      generateSpendAiSummary(STATE.transactions, false).catch(() => {});
+    }
   } else {
     clearSensitiveState();
     showUnlockModal();
