@@ -197,6 +197,8 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .chart-toolbar .traj-toggle,
 .chart-toolbar .chart-style-bar{margin:0}
 .chart-toolbar .chart-style-bar{flex-wrap:nowrap}
+/* Author display:flex on toolbar widgets beats UA [hidden] — force hide. */
+[data-toolbar-for][hidden]{display:none!important}
 @media (max-width:820px){
   .chart-toolbar{
     grid-template-columns:1fr;
@@ -206,7 +208,11 @@ body:not(.locked) #unlock-overlay{display:none!important}
   .chart-toolbar-right{justify-self:stretch}
   .chart-toolbar .chart-pane-tabs,
   .chart-toolbar .range-row,
-  .chart-toolbar .traj-toggle{width:100%;justify-content:center}
+  .chart-toolbar .traj-toggle,
+  .chart-toolbar .chart-style-bar{width:100%;justify-content:center}
+  .chart-toolbar-left{order:2}
+  .chart-toolbar-mid{order:1}
+  .chart-toolbar-right{order:3}
 }
 .perf-hist-avg{
   display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;
@@ -318,6 +324,7 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .section-head{display:flex;justify-content:space-between;align-items:end;gap:14px;flex-wrap:wrap;margin-bottom:16px}
 .section-head h2{font-size:clamp(22px,4vw,28px);font-weight:700;letter-spacing:-0.03em}
 .section-head p{color:var(--muted);font-size:13px;max-width:36em}
+.section-head p:empty{display:none}
 .month-grid{display:grid;grid-template-columns:1.05fr 1fr;gap:22px}
 @media(max-width:740px){.month-grid{grid-template-columns:1fr}}
 .stat-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -384,6 +391,7 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .ai-brief p{margin:0 0 0.85em;color:rgba(238,243,248,.82)}
 .ai-brief p:last-child{margin-bottom:0}
 .ai-status{margin:10px 0 0;font-size:11px;color:var(--muted);line-height:1.4;flex-shrink:0}
+.ai-status:empty{display:none;margin:0}
 .ai-status[data-tone="bad"]{color:var(--bad)}
 .ai-status[data-tone="ok"]{color:var(--ok)}
 .ai-status[data-tone="warn"]{color:var(--gold)}
@@ -415,6 +423,7 @@ body:not(.locked) #unlock-overlay{display:none!important}
   background:rgba(16,28,44,0.72);border:1px solid var(--line);padding:16px 12px 10px;box-shadow:var(--shadow);
 }
 .traj-note{font-size:12px;color:var(--muted);max-width:50em}
+.traj-note:empty{display:none}
 .traj-toggle{display:inline-flex;gap:4px;margin-bottom:12px;padding:4px;border-radius:12px;border:1px solid var(--line);background:rgba(16,28,44,.6)}
 .traj-toggle button{
   border:0;background:transparent;padding:8px 12px;border-radius:9px;
@@ -602,7 +611,6 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
         <button type="button" class="fold-tog" aria-label="Collapse section" aria-expanded="true" onclick="toggleFold('hero-perf')">▼</button>
         <div class="section-head">
           <h2>Performance history</h2>
-          <p>Overall, you, and markets — per period or cumulative.</p>
         </div>
       </div>
       <div class="fold-body perf-history">
@@ -649,22 +657,17 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
         <button type="button" class="fold-tog" aria-label="Collapse section" aria-expanded="true" onclick="toggleFold('overview-wealth')">▼</button>
         <div class="section-head">
           <h2>Total wealth</h2>
-          <p>Overall net worth — existing trail and a forward playground. Switch panes instead of stacking charts.</p>
         </div>
       </div>
       <div class="fold-body">
         <div class="chart-toolbar" data-chart-toolbar="wealth">
           <div class="chart-toolbar-left">
-            <div class="chart-style-bar" data-chart-style="nwHist" data-toolbar-for="existing">
-              <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('nwHist')"> Discrete</label>
-              <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
+            <div class="chart-style-bar" data-chart-style="nwHist" data-toolbar-for="existing">              <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
                 <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
                 <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('nwHist')">
               </label>
             </div>
-            <div class="chart-style-bar" data-chart-style="nwProj" data-toolbar-for="future" hidden>
-              <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('nwProj')"> Discrete</label>
-              <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
+            <div class="chart-style-bar" data-chart-style="nwProj" data-toolbar-for="future" hidden>              <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
                 <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
                 <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('nwProj')">
               </label>
@@ -717,7 +720,6 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
         <button type="button" class="fold-tog" aria-label="Collapse section" aria-expanded="true" onclick="toggleFold('overview-pulse')">▼</button>
         <div class="section-head">
           <h2>At a glance</h2>
-          <p>Quick pulse numbers — the story sits in the check-in above.</p>
         </div>
       </div>
       <div class="fold-body">
@@ -732,7 +734,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
         <button type="button" class="fold-tog" aria-label="Collapse section" aria-expanded="true" onclick="toggleFold('spend-cashflow')">▼</button>
         <div class="section-head">
           <h2>This month</h2>
-          <p id="cashflow-sub">Income, budgets, spend, and latest movements.</p>
+          <p id="cashflow-sub"></p>
         </div>
       </div>
       <div class="fold-body">
@@ -778,7 +780,6 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
         <button type="button" class="fold-tog" aria-label="Collapse section" aria-expanded="true" onclick="toggleFold('pea')">▼</button>
         <div class="section-head">
           <h2>PEA</h2>
-          <p>Per-fund performance, then Existing funding history or Future projections — one chart at a time.</p>
         </div>
       </div>
       <div class="fold-body">
@@ -787,9 +788,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
 
     <div class="chart-toolbar" data-chart-toolbar="pea">
       <div class="chart-toolbar-left">
-        <div class="chart-style-bar" data-chart-style="peaHist" data-toolbar-for="existing">
-          <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('peaHist')"> Discrete</label>
-          <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
+        <div class="chart-style-bar" data-chart-style="peaHist" data-toolbar-for="existing">          <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
             <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
             <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('peaHist')">
           </label>
@@ -815,9 +814,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
           <button type="button" data-range="5Y" onclick="setChartRange('5Y')">5Y</button>
           <button type="button" data-range="Max" onclick="setChartRange('Max')">Max</button>
         </div>
-        <div class="chart-style-bar" data-chart-style="peaProj" data-toolbar-for="future" hidden>
-          <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('peaProj')"> Discrete</label>
-          <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
+        <div class="chart-style-bar" data-chart-style="peaProj" data-toolbar-for="future" hidden>          <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
             <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
             <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('peaProj')">
           </label>
@@ -825,13 +822,11 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
       </div>
     </div>
     <div class="chart-pane on" data-chart-pane="pea" data-pane="existing">
-      <p class="muted" style="margin-bottom:10px">Cumulative versements and today’s value — no projections.</p>
       <div class="chart-wrap"><canvas id="trajChart"></canvas></div>
       <p class="traj-note" id="traj-note"></p>
       <div class="feed" id="pea-funding-list" style="margin-top:12px"></div>
     </div>
     <div class="chart-pane" data-chart-pane="pea" data-pane="future">
-      <p class="muted" style="margin-bottom:10px">Play with monthly DCA, horizon, and growth. Comparison lines stay next to your selected rate.</p>
       <div class="proj-controls">
         <label class="proj-slider">
           <span>Monthly invest <strong data-proj-monthly-val>€700</strong></span>
@@ -859,7 +854,6 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
         <button type="button" class="fold-tog" aria-label="Collapse section" aria-expanded="true" onclick="toggleFold('livret')">▼</button>
         <div class="section-head">
           <h2>Livret A</h2>
-          <p>Buffer money you are not planning to spend — separate from LCL LDDS sinking funds.</p>
         </div>
       </div>
       <div class="fold-body">
@@ -868,19 +862,14 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
       <div class="stat-lbl">Balance</div>
       <div class="stat-val blur-val" id="livret-bal">—</div>
     </div>
-    <p class="traj-note" id="livret-note"></p>
     <div class="chart-toolbar" data-chart-toolbar="livret">
       <div class="chart-toolbar-left">
-        <div class="chart-style-bar" data-chart-style="livret" data-toolbar-for="existing">
-          <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('livret')"> Discrete</label>
-          <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
+        <div class="chart-style-bar" data-chart-style="livret" data-toolbar-for="existing">          <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
             <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
             <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('livret')">
           </label>
         </div>
-        <div class="chart-style-bar" data-chart-style="livretProj" data-toolbar-for="future" hidden>
-          <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('livretProj')"> Discrete</label>
-          <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
+        <div class="chart-style-bar" data-chart-style="livretProj" data-toolbar-for="future" hidden>          <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
             <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
             <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('livretProj')">
           </label>
@@ -905,11 +894,10 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
     </div>
     <div class="chart-pane on" data-chart-pane="livret" data-pane="existing">
       <div class="chart-wrap"><canvas id="livretChart"></canvas></div>
-      <div class="section-head" style="margin-top:22px"><h2 style="font-size:18px">Recent withdrawals</h2><p>Drops between statement balances</p></div>
+      <div class="section-head" style="margin-top:22px"><h2 style="font-size:18px">Recent withdrawals</h2></div>
       <div class="feed" id="livret-withdrawals"></div>
     </div>
     <div class="chart-pane" data-chart-pane="livret" data-pane="future">
-      <p class="muted" style="margin-bottom:10px">Illustrative path at ~3% Livret A — buffer held, no DCA assumed.</p>
       <div class="proj-controls">
         <label class="proj-slider">
           <span>Horizon <strong data-proj-years-val>10y</strong></span>
@@ -929,7 +917,6 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
         <button type="button" class="fold-tog" aria-label="Collapse section" aria-expanded="true" onclick="toggleFold('staging')">▼</button>
         <div class="section-head">
           <h2>Bourso LDDS staging</h2>
-          <p>The live pot for month-end PEA funding — watch it shrink when you top up allowance.</p>
         </div>
       </div>
       <div class="fold-body">
@@ -943,20 +930,20 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
 <div id="modal-overlay" class="modal-overlay">
   <div class="modal"><div class="modal-pad">
     <h3>Settings</h3>
-    <p class="hint">PEA, Livret A and cost basis come from Finary (via sync). PEE and Bourso LDDS are manual here.</p>
+    <p class="hint">PEA / Livret from Finary · PEE &amp; Bourso LDDS set here.</p>
     <div id="modal-auto-block" class="finary-box" style="display:none"><div id="modal-auto-summary"></div></div>
     <div id="modal-finary-waiting" class="finary-wait" style="display:none">No Finary balances on Drive yet. Refresh merges Drive’s finary-balances.json (updated when a sync writes it).</div>
     <label for="modal-pee">PEE (Epsor) €</label>
     <input id="modal-pee" type="number" step="0.01">
     <label for="modal-ldds">Bourso LDDS staging €</label>
     <input id="modal-ldds" type="number" step="0.01" placeholder="Current LDDS balance">
-    <p class="hint">Not counted in net worth. Used on the Staging tab as expected PEA fuel.</p>
+    <p class="hint">Not in net worth — staging / expected PEA only.</p>
     <label for="modal-gemini">Gemini API key (browser only)</label>
     <input id="modal-gemini" type="password" autocomplete="off" placeholder="AIza…">
-    <p class="hint">Required for the live “How you're doing” check-in in the hero. Without it you only get the offline template.</p>
+    <p class="hint">Live check-in in the hero. Without it: offline template only.</p>
     <label for="modal-export-url">Apps Script web app URL</label>
     <input id="modal-export-url" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec">
-    <p class="hint">Needed for live Refresh. Unlock still loads the encrypted vault without it. After updating WalletExport.gs, redeploy the web app.</p>
+    <p class="hint">Live Refresh. After WalletExport.gs changes: Deploy → New version.</p>
     <div class="modal-actions">
       <button type="button" class="btn btn-primary" onclick="saveBalancesFromModal()">Save</button>
       <button type="button" class="btn" onclick="hideBalanceModal()">Cancel</button>
@@ -1946,7 +1933,7 @@ function onHeroVsChange() {
   renderHero();
   // Hero comparison window is part of the check-in dossier — drop stale cache and nudge refresh.
   clearAiCache();
-  setCheckinStatus('Comparison window changed — tap Refresh check-in for an updated read', 'warn');
+  setCheckinStatus('Window changed · refresh check-in', 'warn');
   if (isFoldOpen('hero-perf')) drawPerfHistory();
 }
 
@@ -2528,8 +2515,8 @@ function renderCashflow(txs) {
   elExp.textContent = fmt(exp);
   elNet.textContent = (net >= 0 ? '+' : '−') + fmt(net);
   elNet.className = 'stat-val blur-val ' + (net >= 0 ? 'pos' : 'neg');
-  document.getElementById('cashflow-sub').textContent =
-    `${month.length} movements · income broken down by category below`;
+  const cashSub = document.getElementById('cashflow-sub');
+  if (cashSub) cashSub.textContent = month.length ? `${month.length} movements` : '';
 
   const incByCat = {};
   incomeTxs.forEach(t => {
@@ -2594,9 +2581,10 @@ function setChartRange(id) {
   document.querySelectorAll('[data-range]').forEach(btn => {
     btn.classList.toggle('on', btn.getAttribute('data-range') === id);
   });
-  drawNwHistory();
-  drawPeaHistory();
-  drawLivretChart();
+  // Only redraw Existing panes that are currently active (Future ignores range).
+  if (chartPaneMode.wealth === 'existing') drawNwHistory();
+  if (chartPaneMode.pea === 'existing') drawPeaHistory();
+  if (chartPaneMode.livret === 'existing') drawLivretChart();
 }
 
 function syncChartToolbar(group, mode) {
@@ -2769,7 +2757,7 @@ function renderBudgets(txs) {
   if (!el) return;
   const budgets = (STATE.budgets || []).filter(b => b.name && !/month progress/i.test(b.name));
   if (!budgets.length) {
-    el.innerHTML = '<p class="muted">No budgets in this snapshot yet. Redeploy the latest WalletExport.gs web app, upload a fresh wallet-database to Drive, then hit Refresh.</p>';
+    el.innerHTML = '<p class="muted">No budgets in this snapshot.</p>';
     return;
   }
   const month = monthBucket(txs || []);
@@ -2817,13 +2805,12 @@ function renderPeaHoldings() {
 function renderLivretPanel() {
   const bal = document.getElementById('livret-bal');
   if (bal) bal.textContent = fmt(STATE.livretA || 0);
-  const note = document.getElementById('livret-note');
-  const gap = LIVRET_TARGET - (STATE.livretA || 0);
-  if (note) note.textContent = gap > 0 ? `${fmt(gap)} below the €8k buffer floor — top up from staging before extra PEA.` : 'At or above the €8k buffer — month-end staging can go entirely to the PEA.';
   const list = document.getElementById('livret-withdrawals');
   if (!list) return;
   const wd = livretWithdrawals().slice(0, 12);
-  list.innerHTML = wd.length ? wd.map(w => `<div class="feed-item"><div><div class="feed-cat">Withdrawal</div><div class="feed-meta">${w.date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} · bal ${fmt(w.balance)}</div></div><div class="feed-amt exp blur-val">−${fmt(w.amount)}</div></div>`).join('') : '<p class="muted">No statement-to-statement drops in the PDF history window.</p>';
+  list.innerHTML = wd.length
+    ? wd.map(w => `<div class="feed-item"><div><div class="feed-cat">Withdrawal</div><div class="feed-meta">${w.date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} · bal ${fmt(w.balance)}</div></div><div class="feed-amt exp blur-val">−${fmt(w.amount)}</div></div>`).join('')
+    : '<p class="muted">No withdrawals in history.</p>';
 }
 function renderStaging() {
   const el = document.getElementById('staging-body');
@@ -2832,11 +2819,14 @@ function renderStaging() {
   const locked = STATE.peaMonthly || 700;
   const exp = expectedPeaThisMonth(STATE.transactions);
   if (v == null) {
-    el.innerHTML = `<p class="muted">Set <b>Bourso LDDS</b> in Settings after you check Bourso. Finary free tier keeps PEA + Livret only.</p><button class="btn btn-primary" type="button" onclick="showBalanceModal()">Open Settings</button>`;
+    el.innerHTML = `<p class="muted">Set Bourso LDDS in Settings.</p><button class="btn btn-primary" type="button" onclick="showBalanceModal()">Settings</button>`;
     return;
   }
   const shrink = Math.max(0, exp.stagingTarget - v);
-  el.innerHTML = `<div class="stat-pair"><div class="stat"><div class="stat-lbl">Staging now</div><div class="stat-val blur-val">${fmt(v)}</div></div><div class="stat"><div class="stat-lbl">PEA lock inside</div><div class="stat-val blur-val">${fmt(Math.min(v, locked))}</div></div></div><p class="traj-note" style="margin-top:14px">Target pot ~${fmt(exp.stagingTarget)} (€${locked} PEA + ~€200 surplus). ${v < exp.stagingTarget ? `Down ~${fmt(shrink)} vs full pot — that shrink is the live feedback.` : 'Full pot still intact — strong month so far.'} At EOM, remaining → PEA${(STATE.livretA || 0) < LIVRET_TARGET ? ' (after topping Livret to €8k if needed)' : ''}.</p><p class="traj-note">If spend pace holds, expected PEA ≈ <strong class="blur-val">${fmt(exp.expectedToPea)}</strong>.</p>`;
+  el.innerHTML =
+    `<div class="stat-pair"><div class="stat"><div class="stat-lbl">Staging now</div><div class="stat-val blur-val">${fmt(v)}</div></div>` +
+    `<div class="stat"><div class="stat-lbl">PEA lock</div><div class="stat-val blur-val">${fmt(Math.min(v, locked))}</div></div></div>` +
+    `<p class="traj-note" style="margin-top:12px">Target ${fmt(exp.stagingTarget)}${v < exp.stagingTarget ? ` · −${fmt(shrink)}` : ''} · expected PEA ≈ <strong class="blur-val">${fmt(exp.expectedToPea)}</strong></p>`;
 }
 function syncChartStyleUI(id) {
   const ids = id ? [id] : Object.keys(chartStyles);
@@ -2844,25 +2834,21 @@ function syncChartStyleUI(id) {
     const bar = document.querySelector(`[data-chart-style="${cid}"]`);
     if (!bar) return;
     const st = chartStyles[cid] || { ...CHART_STYLE_DEFAULT };
-    const disc = bar.querySelector('[data-chart-discrete]');
     const smooth = bar.querySelector('[data-chart-smooth]');
     const val = bar.querySelector('[data-chart-smooth-val]');
-    const wrap = bar.querySelector('.chart-smooth-wrap');
-    if (disc) disc.checked = !!st.discrete;
     if (smooth) smooth.value = String(st.smooth);
     if (val) val.textContent = st.smooth + '%';
-    if (wrap) wrap.classList.toggle('is-disabled', !!st.discrete);
   });
 }
 
 function onChartStyleChange(id) {
   const bar = document.querySelector(`[data-chart-style="${id}"]`);
   if (!bar || !chartStyles[id]) return;
-  const disc = bar.querySelector('[data-chart-discrete]');
   const smooth = bar.querySelector('[data-chart-smooth]');
+  const smoothVal = smooth ? Math.min(100, Math.max(0, +smooth.value)) : 40;
   chartStyles[id] = {
-    discrete: !!(disc && disc.checked),
-    smooth: smooth ? Math.min(100, Math.max(0, +smooth.value)) : 40,
+    discrete: false, // Smooth 0% is stepped — no separate Discrete toggle
+    smooth: smoothVal,
   };
   saveChartStyle(id);
   syncChartStyleUI(id);
@@ -2874,11 +2860,11 @@ function onChartStyleChange(id) {
   else if (id === 'nwProj') drawNwProjection();
 }
 
-/** Per-chart line curve: discrete or smooth 0% = sudden steps; else tension from the slider. */
+/** Per-chart line curve: smooth 0% = sudden steps; else tension from the slider. */
 function chartLineStyle(id, opts = {}) {
   const st = chartStyles[id] || CHART_STYLE_DEFAULT;
-  // 0% smooth is the same “sudden jump” look as Discrete (stepped after each point).
-  const sudden = !!st.discrete || !(st.smooth > 0);
+  // 0% smooth = stepped after each point (former Discrete).
+  const sudden = !(st.smooth > 0);
   if (sudden) {
     return {
       tension: 0,
@@ -3229,8 +3215,8 @@ function drawNwHistory() {
   if (note) {
     const last = series[series.length - 1];
     note.textContent = series.length
-      ? `${series.length} points · now ${fmt(last?.nw || netWorth())} (PEA + Livret + PEE). Older points blend statement history with an approx PEA mark-to-market.`
-      : 'No wealth history yet — Refresh once and it will start logging.';
+      ? `${series.length} pts · ${fmt(last?.nw || netWorth())}`
+      : 'No history yet — Refresh once.';
   }
 }
 
@@ -3304,8 +3290,7 @@ function drawNwProjection() {
   const note = document.getElementById('nw-proj-note');
   if (note && end) {
     note.textContent =
-      `From ${fmt(netWorth())} now · PEA DCA ${fmt(monthly)}/mo at ${selected}% · Livret ~3% · PEE flat` +
-      ` · at +${years}y ≈ ${fmt(end.nw)} — illustrative, not advice.`;
+      `${fmt(netWorth())} now · ${fmt(monthly)}/mo @ ${selected}% · +${years}y ≈ ${fmt(end.nw)}`;
   }
 }
 
@@ -3361,7 +3346,7 @@ function drawLivretProjection() {
   const note = document.getElementById('livret-proj-note');
   const end = points[points.length - 1];
   if (note && end) {
-    note.textContent = `From ${fmt(STATE.livretA || 0)} · ~3%/y · at +${years}y ≈ ${fmt(end.balance)} if left untouched.`;
+    note.textContent = `${fmt(STATE.livretA || 0)} · 3%/y · +${years}y ≈ ${fmt(end.balance)}`;
   }
 }
 
@@ -3498,10 +3483,8 @@ function drawPeaHistory() {
   if (note) {
     const sum = inView.reduce((s, p) => s + p.amount, 0);
     note.textContent = inView.length
-      ? `${inView.length} funding event${inView.length > 1 ? 's' : ''} in view · ${fmt(sum)} paid in` +
-        (STATE.pea ? ` · PEA now ${fmt(STATE.pea)}` : '') +
-        (STATE.peaStartedAt ? ` · opened ${STATE.peaStartedAt}` : '')
-      : 'No funding events in this window.';
+      ? `${inView.length} versements · ${fmt(sum)}` + (STATE.pea ? ` · now ${fmt(STATE.pea)}` : '')
+      : 'No versements in this window.';
   }
   const list = document.getElementById('pea-funding-list');
   if (list) {
@@ -3616,9 +3599,7 @@ function drawPeaProjection() {
   const note = document.getElementById('proj-note');
   if (note && end) {
     note.textContent =
-      `From ${fmt(STATE.pea || 0)} now · ${fmt(monthly)}/mo · ${selected}% selected` +
-      ` · at +${years}y ≈ ${fmt(end.gross)} gross` +
-      ` / ~${fmt(end.net)} net after 5y (PS 17.2% on gain) — illustrative, not advice.`;
+      `${fmt(STATE.pea || 0)} · ${fmt(monthly)}/mo @ ${selected}% · +${years}y ≈ ${fmt(end.gross)} / ~${fmt(end.net)} net`;
   }
 }
 
@@ -3747,10 +3728,12 @@ async function refreshAll() {
     renderAll(STATE.transactions);
     // Snapshot NW after a successful Refresh so the next visit can show “vs last check”
     commitNwCheckpoint(netWorth(), true);
-    // Fingerprint clear drops localStorage cache, but the AI panel still shows old HTML —
-    // regenerate whenever the ledger actually moved (or always after live refresh).
-    if (ledgerChanged) {
-      generateAiSummary(STATE.transactions, true).catch(() => {});
+    // Gemini: only auto-run on the first successful Refresh of the calendar month.
+    // Otherwise use the check-in button (avoids burning quota on every wallet sync).
+    const firstRefreshMonth = isFirstDashboardRefreshThisMonth();
+    markDashboardRefreshMonth();
+    if (firstRefreshMonth && ledgerChanged) {
+      generateAiSummary(STATE.transactions, false).catch(() => {});
     }
     const nBud = (STATE.budgets || []).length;
     if (status) status.innerHTML = [
@@ -3808,22 +3791,55 @@ function setAiCache(text, meta = {}) {
 function clearAiCache() {
   try { localStorage.removeItem(aiCacheKey()); } catch (_) {}
 }
-function setCheckinStatus(msg, tone = '') {
+function setCheckinStatus(msg, tone = '', detail = '') {
   const el = document.getElementById('ai-status');
   if (!el) return;
   el.textContent = msg || '';
   el.dataset.tone = tone || '';
+  if (detail) el.title = detail;
+  else el.removeAttribute('title');
 }
 
 let aiRequestSerial = 0;
 const LS_GEMINI_COOLDOWN = 'gemini_quota_cooldown_until';
+const LS_AI_REFRESH_MONTH = 'dashboard_ai_refresh_month';
 const GEMINI_QUOTA_COOLDOWN_MS = 45 * 60 * 1000;
+
+function parisMonthKey(d = new Date()) {
+  // Calendar month in Europe/Paris for “first Refresh this month”.
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit',
+    }).formatToParts(d);
+    const y = parts.find(p => p.type === 'year')?.value;
+    const m = parts.find(p => p.type === 'month')?.value;
+    if (y && m) return `${y}-${m}`;
+  } catch (_) {}
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function isFirstDashboardRefreshThisMonth() {
+  try {
+    const cur = parisMonthKey();
+    const prev = localStorage.getItem(LS_AI_REFRESH_MONTH) || '';
+    return prev !== cur;
+  } catch {
+    return true;
+  }
+}
+
+function markDashboardRefreshMonth() {
+  try { localStorage.setItem(LS_AI_REFRESH_MONTH, parisMonthKey()); } catch (_) {}
+}
 
 function isGeminiQuotaError(err) {
   const status = err && err.status;
   const msg = String((err && err.message) || '');
-  // Google wording varies: "exceeded your current quota", "quota exceeded", RESOURCE_EXHAUSTED, 429.
-  return status === 429 || /RESOURCE_EXHAUSTED|quota|rate.?limit|billing details/i.test(msg);
+  // Prefer hard signals — bare “billing details” alone was latching false cooldowns.
+  if (status === 429) return true;
+  if (/RESOURCE_EXHAUSTED/i.test(msg)) return true;
+  if (/quota\s*(exceeded|exhausted)|exceeded your current quota|rate[_ ]?limit/i.test(msg)) return true;
+  return false;
 }
 
 function isGeminiFatalError(err) {
@@ -4226,14 +4242,12 @@ function buildCheckinPrompt(ctx) {
     'You are Rostom’s personal wealth check-in writer — a thoughtful friend who inspected his dossier and, when useful, recent public market/news context. Warm, specific, adult. Not a coach bot.',
     '',
     'OUTPUT (strict):',
-    '- 2 short paragraphs of continuous prose (optional tiny third for the next step). NO bullets, NO numbered lists, NO headings, NO emoji.',
+    '- ONE short paragraph of continuous prose. NO bullets, lists, headings, or emoji.',
     '- Bold a few key € with **like this**.',
-    '- Start from the wealth move he sees. Use wealthDecomposition.controllablePerfEur (You) vs nonControllablePerfEur (Markets). If portfolioMoveLikelyDominatesWealthChange is true, lead with markets/PEA mark-to-market, then layer controllable saving + life/spend as colour — do NOT pretend Leisure €200 caused a €1500+ NW drop.',
-    '- LIFE EVENTS: first read labeledMoneyMovements, incomeWithMemos, categoriesNotOnAnyBudget, and unbudgetedOrOutOfBandExpenses. Wallet’s “Out of budget” (and any category on no budget) is where one-offs often sit — even if MoM totals barely changed. Quote concrete memos/categories when they explain the month. Never invent people/events absent from those strings.',
-    '- Also skim expensesWithMemos, budgets[].sampleTx, and allExpensesThisMonth for supporting colour.',
-    '- Use Google Search for recent equity/market or major news only when it helps explain a portfolio-dominated move between the baseline date and asOf (' + ctx.today + '). Prefer concrete market colour (indices, mega-cap/tech, rates, elections) over vague vibes. Do not moralize politics.',
-    '- Empathize when the month was noisy; reinforce good habits (DCA, Livret floor). End with one concrete next move.',
-    '- Not legal/tax advice. PEA net-after-5y = PS 17.2% on gain after five years.',
+    '- Lead with the wealth move (You vs residual). If portfolioMoveLikelyDominatesWealthChange, lead with PEA/markets — do not blame small Leisure spends for a large NW drop.',
+    '- Mention a concrete memo/category from the dossier when it explains the month. Never invent events.',
+    '- Use Google Search only if it helps explain a portfolio-dominated move as of ' + ctx.today + '.',
+    '- End with one concrete next move. Not legal/tax advice.',
     '',
     wealthLine,
     '',
@@ -4315,7 +4329,7 @@ async function generateAiSummary(txs, force = false) {
   const cached = getAiCache();
   if (!force && cached && (Date.now() - cached.at) < 86400000) {
     el.innerHTML = renderAiHtml(cached.text);
-    setCheckinStatus('Cached live check-in · tap Refresh check-in for a new read', 'ok');
+    setCheckinStatus('Cached', 'ok');
     return;
   }
 
@@ -4323,39 +4337,36 @@ async function generateAiSummary(txs, force = false) {
   aiGenerating = true;
   const btn = document.getElementById('ai-refresh-btn');
   if (btn) { btn.textContent = 'Refreshing…'; btn.disabled = true; }
-  el.innerHTML = `<span class="ai-loading">Reading your numbers + recent context…</span>`;
+  el.innerHTML = `<span class="ai-loading">Reading your numbers…</span>`;
   setCheckinStatus('Calling Gemini…', 'warn');
 
   const stillCurrent = () => reqId === aiRequestSerial;
   const ctx = buildCheckinDossier(txs);
   const apiKey = (localStorage.getItem(LS_GEMINI) || '').trim();
-  const digest = `dossier ${ctx.unbudgetedCats?.length || 0} unbudgeted cat · ${ctx.labeledAnchors?.length || 0} labels · ${ctx.unbudgetedExpenses?.length || 0} out-of-band txs`;
+  const digest = `dossier ${ctx.unbudgetedCats?.length || 0} unbudgeted · ${ctx.labeledAnchors?.length || 0} labels · ${ctx.unbudgetedExpenses?.length || 0} out-of-band`;
   const errors = [];
 
   const finishLocal = (statusMsg, offlineReason = 'offline') => {
     if (!stillCurrent()) return;
     ctx._offlineReason = offlineReason;
     el.innerHTML = renderAiHtml(localCheckinText(ctx));
-    setCheckinStatus(statusMsg || 'Offline template — add a Gemini API key in Settings for the real check-in', 'bad');
+    setCheckinStatus(statusMsg || 'Offline · add Gemini key in Settings', 'bad', digest);
   };
 
   try {
     if (!apiKey) {
-      finishLocal('No Gemini API key in Settings — showing offline template only', 'offline');
+      finishLocal('Offline · no Gemini key', 'offline');
       return;
     }
 
     const coolUntil = getGeminiCooldownUntil();
     if (!force && coolUntil > Date.now()) {
-      finishLocal(
-        `Gemini cooldown ~${geminiCooldownRemainingMin()}m after quota — offline template · tap Refresh check-in to retry · ${digest}`,
-        'cooldown'
-      );
+      finishLocal(`Quota · ~${geminiCooldownRemainingMin()}m`, 'cooldown');
       return;
     }
 
     const prompt = buildCheckinPrompt(ctx);
-    setCheckinStatus('Calling Gemini… · ' + digest, 'warn');
+    setCheckinStatus('Calling Gemini…', 'warn', digest);
 
     let result = null;
     // Prefer grounded search; fall back across models, then plain generation.
@@ -4384,25 +4395,18 @@ async function generateAiSummary(txs, force = false) {
       el.innerHTML = renderAiHtml(result.text);
       setAiCache(result.text, { source: 'ai' });
       setCheckinStatus(
-        (result.grounded
-          ? `Live AI · ${result.model} · Google Search grounding on`
-          : `Live AI · ${result.model} · model knowledge (no search hits)`) + ' · ' + digest,
-        'ok'
+        result.grounded ? `Live · ${result.model}` : `Live · ${result.model}`,
+        'ok',
+        digest
       );
     }
   } catch (e) {
     console.warn('Gemini check-in failed:', e.message, errors);
     if (isGeminiQuotaError(e)) {
       setGeminiCooldown();
-      finishLocal(
-        `Gemini quota/rate limit — offline template for ~${geminiCooldownRemainingMin()}m. Check plan/billing at aistudio.google.com · ${digest}`,
-        'quota'
-      );
+      finishLocal(`Quota · ~${geminiCooldownRemainingMin()}m`, 'quota');
     } else {
-      finishLocal(
-        `AI failed (${e.message || 'error'}) — offline template below. Check key in Settings. · ${digest}`,
-        'offline'
-      );
+      finishLocal('AI failed · offline', 'offline');
     }
   } finally {
     if (stillCurrent()) {
