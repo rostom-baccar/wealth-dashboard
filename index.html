@@ -2194,9 +2194,10 @@ function renderHero() {
     nwEl.textContent = nw ? fmt(nw) : '—';
     const h0 = boosts.hero;
     if (h0 && !h0.pending && h0.amount != null) {
-      const tone = heroDeltaColor(h0.amount, h0.pct);
-      nwEl.className = 'hero-amount blur-val ' + (tone.dir || 'flat');
-      nwEl.style.color = tone.color || '';
+      const dir = deltaDir(h0.amount);
+      // Big NW figure: solid green/red by direction; white when flat (not gold — PEA owns gold).
+      nwEl.className = 'hero-amount blur-val ' + dir;
+      nwEl.style.color = dir === 'up' ? 'var(--ok)' : (dir === 'down' ? 'var(--bad)' : '');
     } else {
       nwEl.className = 'hero-amount blur-val flat';
       nwEl.style.color = '';
