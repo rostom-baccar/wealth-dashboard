@@ -144,7 +144,7 @@ body:not(.locked) #unlock-overlay{display:none!important}
   align-items:stretch;
 }
 .hero-main{
-  display:flex;flex-direction:column;justify-content:flex-start;gap:10px;min-width:0;
+  display:flex;flex-direction:column;justify-content:flex-start;gap:6px;min-width:0;
 }
 .hero-brand{
   font-weight:700;
@@ -153,15 +153,19 @@ body:not(.locked) #unlock-overlay{display:none!important}
 }
 .hero-kicker{
   font-size:11px;letter-spacing:.16em;text-transform:uppercase;
-  color:rgba(238,243,248,.65);margin:2px 0 0;font-weight:600;
+  color:rgba(238,243,248,.65);margin:0;font-weight:600;
 }
 .hero-amount{
   font-family:var(--mono);font-weight:600;
-  font-size:clamp(30px,5.5vw,44px);letter-spacing:-0.03em;color:var(--gold);margin:0;
+  font-size:clamp(30px,5.5vw,44px);letter-spacing:-0.03em;color:#fff;margin:0;
+  transition:color .25s ease;
 }
+.hero-amount.up{color:var(--ok)}
+.hero-amount.down{color:var(--bad)}
+.hero-amount.flat{color:#fff}
 .hero-delta-row{
   display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;
-  margin:0;
+  margin:2px 0 0;
 }
 .hero-delta{
   font-family:var(--mono);font-weight:600;
@@ -280,45 +284,55 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .hero-vs select:focus{outline:none;border-color:rgba(126,160,211,.45);color:var(--text)}
 .hero-vs select option{background:var(--panel);color:var(--text)}
 .hero-split{
-  display:flex;flex-direction:column;gap:8px;
-  margin:6px 0 0;max-width:min(420px,100%);
+  display:flex;flex-direction:column;gap:6px;
+  margin:8px 0 0;width:100%;max-width:100%;
+  position:relative;
 }
 .hero-mix-bar{
-  display:flex;width:100%;height:10px;border-radius:999px;overflow:hidden;
+  display:flex;width:100%;height:32px;border-radius:10px;overflow:hidden;
   background:rgba(7,13,22,0.45);border:1px solid rgba(126,160,211,0.16);
 }
 .hero-mix-seg{
-  min-width:0;height:100%;
-  transition:flex-grow .35s ease;
+  position:relative;min-width:0;height:100%;
+  display:flex;align-items:center;justify-content:center;
+  padding:0 8px;cursor:default;
+  transition:filter .18s ease, flex-grow .35s ease;
+  color:#070d16;font-weight:600;
 }
-.hero-mix-seg[data-key="pea"]{background:var(--gold)}
-.hero-mix-seg[data-key="livret"]{background:var(--aegean)}
-.hero-mix-seg[data-key="pee"]{background:var(--ok)}
-.hero-mix-seg[data-key="cash"]{background:#8b9aab}
-.hero-mix-legend{
-  display:flex;flex-wrap:wrap;gap:6px 14px;
-  font-size:12px;line-height:1.3;color:var(--muted);
+.hero-mix-seg:hover,
+.hero-mix-seg.is-hot{filter:brightness(1.12);z-index:1}
+.hero-mix-seg[data-key="pea"]{background:var(--gold);color:#1a1406}
+.hero-mix-seg[data-key="livret"]{background:var(--aegean);color:#071018}
+.hero-mix-seg[data-key="pee"]{background:var(--ok);color:#07140e}
+.hero-mix-seg[data-key="cash"]{background:#8b9aab;color:#0b1016}
+.hero-mix-in{
+  display:flex;align-items:baseline;gap:6px;min-width:0;max-width:100%;
+  overflow:hidden;white-space:nowrap;pointer-events:none;
 }
-.hero-mix-item{
-  display:inline-flex;align-items:baseline;gap:6px;white-space:nowrap;
+.hero-mix-lbl{
+  font-size:10px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;
+  flex:0 0 auto;
 }
-.hero-mix-dot{
-  width:7px;height:7px;border-radius:50%;flex:0 0 auto;
-  align-self:center;
-}
-.hero-mix-dot[data-key="pea"]{background:var(--gold)}
-.hero-mix-dot[data-key="livret"]{background:var(--aegean)}
-.hero-mix-dot[data-key="pee"]{background:var(--ok)}
-.hero-mix-dot[data-key="cash"]{background:#8b9aab}
-.hero-mix-lbl{font-size:11px;letter-spacing:.04em;font-weight:500}
 .hero-mix-val{
-  font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text);
-  letter-spacing:-0.02em;
+  font-family:var(--mono);font-size:11px;font-weight:600;
+  letter-spacing:-0.02em;overflow:hidden;text-overflow:ellipsis;
 }
-.hero-mix-pct{
-  font-family:var(--mono);font-size:11px;color:var(--muted);
+.hero-mix-tip{
+  position:absolute;left:0;bottom:calc(100% + 6px);z-index:5;
+  min-width:160px;max-width:min(280px,100%);
+  padding:10px 12px;border-radius:10px;
+  background:rgba(7,13,22,0.96);border:1px solid rgba(126,160,211,0.28);
+  box-shadow:var(--shadow);pointer-events:none;
+  font-size:12px;line-height:1.35;color:var(--text);
 }
-.hero-cta{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
+.hero-mix-tip[hidden]{display:none!important}
+.hero-mix-tip strong{font-family:var(--mono);font-weight:600}
+.hero-mix-tip .tip-lbl{
+  display:block;font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;margin-bottom:4px;
+}
+.hero-mix-tip .tip-meta{color:var(--muted);margin-top:2px}
+.hero-cta{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
 .hero-cta .btn{padding:8px 12px;font-size:11px}
 
 .section{margin-bottom:48px;animation:fade .5s ease both}
@@ -2175,7 +2189,19 @@ function renderHero() {
   if (nw > 0) recordNwSnapshot(nw);
   const boosts = computeBoosts(STATE.transactions);
 
-  document.getElementById('nw-hero-val').textContent = nw ? fmt(nw) : '—';
+  const nwEl = document.getElementById('nw-hero-val');
+  if (nwEl) {
+    nwEl.textContent = nw ? fmt(nw) : '—';
+    const h0 = boosts.hero;
+    if (h0 && !h0.pending && h0.amount != null) {
+      const tone = heroDeltaColor(h0.amount, h0.pct);
+      nwEl.className = 'hero-amount blur-val ' + (tone.dir || 'flat');
+      nwEl.style.color = tone.color || '';
+    } else {
+      nwEl.className = 'hero-amount blur-val flat';
+      nwEl.style.color = '';
+    }
+  }
 
   const vsSel = document.getElementById('hero-vs');
   if (vsSel && vsSel.value !== heroVsMode) vsSel.value = heroVsMode;
@@ -2223,7 +2249,7 @@ function renderHero() {
   if (isFoldOpen('hero-perf')) drawPerfHistory();
 }
 
-/** Stacked mix bar: segment width = share of PEA / Livret / PEE (/ cash) — a 1D pie. */
+/** Stacked mix bar: segment width = share of PEA / Livret / PEE (/ cash) — interactive 1D pie. */
 function renderHeroMixBar(el) {
   const parts = [
     { key: 'pea', lbl: 'PEA', v: Math.max(0, +STATE.pea || 0) },
@@ -2241,21 +2267,54 @@ function renderHeroMixBar(el) {
   const total = shown.reduce((s, p) => s + p.v, 0) || 1;
   const aria = shown.map(p => `${p.lbl} ${fmt(p.v)} (${Math.round((p.v / total) * 100)}%)`).join(', ');
   el.innerHTML =
-    `<div class="hero-mix-bar" role="img" aria-label="Allocation: ${aria}">` +
-    shown.map(p =>
-      `<div class="hero-mix-seg" data-key="${p.key}" style="flex:${p.v} 1 0" title="${p.lbl}: ${fmt(p.v)} · ${Math.round((p.v / total) * 100)}%"></div>`
-    ).join('') +
+    `<div class="hero-mix-bar" role="group" aria-label="Allocation: ${aria}">` +
+    shown.map(p => {
+      const pct = Math.round((p.v / total) * 100);
+      const shortLbl = p.key === 'livret' ? 'Livret' : p.lbl;
+      return `<div class="hero-mix-seg" data-key="${p.key}" data-lbl="${p.lbl}" data-val="${p.v}" data-pct="${pct}"` +
+        ` style="flex:${p.v} 1 0" tabindex="0" role="listitem"` +
+        ` aria-label="${p.lbl}: ${fmt(p.v)}, ${pct}%">` +
+        `<span class="hero-mix-in">` +
+        `<span class="hero-mix-lbl">${shortLbl}</span>` +
+        `<span class="hero-mix-val blur-val">${fmt(p.v)}</span>` +
+        `</span></div>`;
+    }).join('') +
     `</div>` +
-    `<div class="hero-mix-legend">` +
-    shown.map(p =>
-      `<span class="hero-mix-item" title="${p.lbl}: ${fmt(p.v)}">` +
-      `<span class="hero-mix-dot" data-key="${p.key}" aria-hidden="true"></span>` +
-      `<span class="hero-mix-lbl">${p.lbl}</span>` +
-      `<strong class="hero-mix-val blur-val">${fmt(p.v)}</strong>` +
-      `<span class="hero-mix-pct">${Math.round((p.v / total) * 100)}%</span>` +
-      `</span>`
-    ).join('') +
-    `</div>`;
+    `<div class="hero-mix-tip" id="hero-mix-tip" hidden></div>`;
+
+  const tip = el.querySelector('.hero-mix-tip');
+  const bar = el.querySelector('.hero-mix-bar');
+  const clearHot = () => {
+    el.querySelectorAll('.hero-mix-seg.is-hot').forEach(s => s.classList.remove('is-hot'));
+    if (tip) { tip.hidden = true; tip.innerHTML = ''; }
+  };
+  const showTip = (seg) => {
+    if (!tip || !seg) return;
+    el.querySelectorAll('.hero-mix-seg.is-hot').forEach(s => s.classList.remove('is-hot'));
+    seg.classList.add('is-hot');
+    const lbl = seg.getAttribute('data-lbl') || '';
+    const val = +seg.getAttribute('data-val') || 0;
+    const pct = seg.getAttribute('data-pct') || '0';
+    tip.innerHTML =
+      `<span class="tip-lbl">${lbl}</span>` +
+      `<strong class="blur-val">${fmt(val)}</strong>` +
+      `<div class="tip-meta">${pct}% of net worth</div>`;
+    tip.hidden = false;
+    // Keep tip under the hovered segment when possible.
+    const barRect = bar.getBoundingClientRect();
+    const segRect = seg.getBoundingClientRect();
+    const tipW = tip.offsetWidth || 160;
+    let left = segRect.left - barRect.left + (segRect.width - tipW) / 2;
+    left = Math.max(0, Math.min(left, barRect.width - tipW));
+    tip.style.left = `${Math.round(left)}px`;
+  };
+  el.querySelectorAll('.hero-mix-seg').forEach(seg => {
+    seg.addEventListener('mouseenter', () => showTip(seg));
+    seg.addEventListener('focus', () => showTip(seg));
+    seg.addEventListener('mouseleave', clearHot);
+    seg.addEventListener('blur', clearHot);
+  });
+  bar?.addEventListener('mouseleave', clearHot);
 }
 
 function monthBucket(txs) {
