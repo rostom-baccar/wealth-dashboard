@@ -525,7 +525,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
         </div>
       </aside>
     </div>
-    <div class="perf-history" id="perf-history" hidden>
+    <div class="perf-history" id="perf-history">
       <div class="chart-pane-tabs" role="tablist" aria-label="Performance history">
         <button type="button" class="on" data-perf-hist="overall" onclick="setPerfHistTab('overall')">Overall</button>
         <button type="button" data-perf-hist="you" onclick="setPerfHistTab('you')">You</button>
@@ -1789,7 +1789,8 @@ function toggleFold(id) {
 }
 
 let perfHistTab = localStorage.getItem('dashboard_perf_hist_tab') || 'overall';
-let perfHistoryOpen = localStorage.getItem('dashboard_perf_hist_open') === '1';
+// Default open; only stay closed if the user explicitly hid it.
+let perfHistoryOpen = localStorage.getItem('dashboard_perf_hist_open') !== '0';
 
 function perfHistorySpec() {
   if (heroVsMode === '3m') {
