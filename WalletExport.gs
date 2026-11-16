@@ -28,9 +28,14 @@ function exportWalletToSheet() {
       categories[c.id] = { name: c.name || '', type: c.type };
     });
     const wallets = buildLookup(db['wallet'] || [], 'id', 'name');
+    const spendAccountId = resolveSpendAccountId_(db['account'] || []);
 
+    // Spend ledger = Rostom profile only. Skip transfers (type 2) — they are not income/spend.
+    // Savings profile (PEA/Livret staging) is read separately into balances.
     const trans = (db['trans'] || [])
       .filter(t => {
+        if (spendAccountId != null && t['account_id'] !== spendAccountId) return false;
+        if (t['type'] === 2) return false; // transfer
         const cat = categories[t['category_id']];
         const name = (cat && cat.name) || '';
         // Keep blank-named categories (salary lives here). Only drop progress-bar noise.
@@ -58,11 +63,13 @@ function exportWalletToSheet() {
         return [dateStr, type, category, amount, 'EUR', memo, wallet];
       });
 
-    const budgets = buildBudgetsFromDb_(db, categories);
+    const budgets = buildBudgetsFromDb_(db, categories, spendAccountId);
+    const savings = extractSavingsStaging_(db, wallets);
 
     writeToSheet(trans);
-    writeJsonSnapshot(trans, budgets); // also write JSON for standalone dashboard
-    Logger.log('Export complete: ' + trans.length + ' transactions, ' + budgets.length + ' budgets');
+    writeJsonSnapshot(trans, budgets, savings); // also write JSON for standalone dashboard
+    Logger.log('Export complete: ' + trans.length + ' transactions (account ' + spendAccountId + '), ' + budgets.length + ' budgets'
+      + (savings && savings.boursoLdds != null ? ', LDDS staging €' + savings.boursoLdds : ''));
 
   } catch(e) {
     Logger.log('ERROR: ' + e.message + '\n' + e.stack);
@@ -76,8 +83,54 @@ function exportWalletToSheet() {
 // WRITE JSON SNAPSHOT — standalone dashboard reads this directly
 // Format: { lastSync, transactions: [{date,type,category,amount,memo}] }
 // ================================================================
+/** Spend profile = Money Manager account named Rostom (fallback: lowest id). */
+function resolveSpendAccountId_(accounts) {
+  const rows = accounts || [];
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i].name || '').trim().toLowerCase() === 'rostom') return rows[i].id;
+  }
+  if (rows.length) return rows[0].id;
+  return null;
+}
+
+/** Savings profile → Bourso LDDS staging (sum of transfers into *LDDS* wallets). */
+function extractSavingsStaging_(db, wallets) {
+  const accounts = db['account'] || [];
+  let savingsId = null;
+  for (let i = 0; i < accounts.length; i++) {
+    if (String(accounts[i].name || '').trim().toLowerCase() === 'savings') {
+      savingsId = accounts[i].id;
+      break;
+    }
+  }
+  if (savingsId == null) return null;
+  let ldds = 0;
+  let n = 0;
+  (db['trans'] || []).forEach(t => {
+    if (t['account_id'] !== savingsId) return;
+    if (t['type'] !== 2) return; // transfers only
+    const toName = String(wallets[t['transfer_wallet_id']] || '');
+    if (!/ldds/i.test(toName)) return;
+    ldds += Math.abs(t['amount'] || 0) / 100.0;
+    n++;
+  });
+  // Prefer live wallet balance when Money Manager has one
+  (db['wallet'] || []).forEach(w => {
+    if (w['account_id'] !== savingsId) return;
+    if (!/ldds/i.test(String(w.name || ''))) return;
+    const bal = (w.amount || 0) / 100.0;
+    if (bal > 0) ldds = bal;
+  });
+  return {
+    profile: 'Savings',
+    accountId: savingsId,
+    boursoLdds: Math.round(ldds * 100) / 100,
+    transferCount: n,
+  };
+}
+
 /** Build dashboard budgets from Wallet Manager budget + budgetCategory tables. */
-function buildBudgetsFromDb_(db, categories) {
+function buildBudgetsFromDb_(db, categories, spendAccountId) {
   const skip = { 'Month progress bar': 1, 'Month progress bar compensation': 1 };
   const linksByBudget = {};
   (db['budgetCategory'] || []).forEach(bc => {
@@ -87,6 +140,7 @@ function buildBudgetsFromDb_(db, categories) {
   });
   const out = [];
   (db['budget'] || []).forEach(b => {
+    if (spendAccountId != null && b['account_id'] != null && b['account_id'] !== spendAccountId) return;
     const name = String(b.name || '').trim();
     if (skip[name] || name.toLowerCase().indexOf('month progress') === 0) return;
     const catNames = [];
@@ -109,7 +163,7 @@ function buildBudgetsFromDb_(db, categories) {
   return out;
 }
 
-function writeJsonSnapshot(rows, budgets) {
+function writeJsonSnapshot(rows, budgets, savings) {
   const folder = DriveApp.getFolderById(SQLITE_FOLDER_ID);
 
   const snapshot = {
@@ -141,6 +195,11 @@ function writeJsonSnapshot(rows, budgets) {
   }
   if (!snapshot.balances) snapshot.balances = {};
   snapshot.balances.budgets = budgets || [];
+  if (savings && savings.boursoLdds != null) {
+    snapshot.balances.boursoLdds = savings.boursoLdds;
+    snapshot.balances.boursoLddsSource = 'money-manager:Savings';
+    snapshot.savingsProfile = savings;
+  }
 
   const json = JSON.stringify(snapshot);
   const file = upsertJsonFile_(folder, JSON_FILE_NAME, json);

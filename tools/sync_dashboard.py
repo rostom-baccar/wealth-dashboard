@@ -28,6 +28,52 @@ def load_json(path: Path):
     return None
 
 
+def resolve_spend_account_id(cur) -> int | None:
+    rows = cur.execute("SELECT id, name FROM account ORDER BY id").fetchall()
+    for r in rows:
+        if (r["name"] or "").strip().lower() == "rostom":
+            return int(r["id"])
+    return int(rows[0]["id"]) if rows else None
+
+
+def export_savings_staging(db_path: Path) -> dict | None:
+    """Savings profile → Bourso LDDS reserved (transfers into *LDDS* wallets)."""
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    savings = cur.execute(
+        "SELECT id FROM account WHERE lower(trim(name)) = 'savings' LIMIT 1"
+    ).fetchone()
+    if not savings:
+        conn.close()
+        return None
+    sid = int(savings["id"])
+    wallets = {r["id"]: r["name"] for r in cur.execute("SELECT id, name, amount, account_id FROM wallet")}
+    ldds = 0.0
+    n = 0
+    for t in cur.execute(
+        "SELECT amount, transfer_wallet_id FROM trans WHERE account_id = ? AND type = 2",
+        (sid,),
+    ):
+        to_name = wallets.get(t["transfer_wallet_id"]) or ""
+        if "ldds" not in to_name.lower():
+            continue
+        ldds += abs(t["amount"] or 0) / 100.0
+        n += 1
+    for r in cur.execute(
+        "SELECT name, amount FROM wallet WHERE account_id = ?", (sid,)
+    ):
+        if "ldds" in (r["name"] or "").lower() and (r["amount"] or 0) > 0:
+            ldds = (r["amount"] or 0) / 100.0
+    conn.close()
+    return {
+        "profile": "Savings",
+        "accountId": sid,
+        "boursoLdds": round(ldds, 2),
+        "transferCount": n,
+    }
+
+
 def export_wallet_txs(db_path: Path) -> list[dict]:
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
@@ -37,12 +83,18 @@ def export_wallet_txs(db_path: Path) -> list[dict]:
         for r in cur.execute("SELECT id, name, type FROM category")
     }
     wallets = {r["id"]: r["name"] for r in cur.execute("SELECT id, name FROM wallet")}
+    spend_id = resolve_spend_account_id(cur)
     rows = cur.execute(
-        "SELECT category_id, wallet_id, amount, date_time, note FROM trans ORDER BY date_time DESC"
+        "SELECT category_id, wallet_id, amount, date_time, note, type, account_id "
+        "FROM trans ORDER BY date_time DESC"
     ).fetchall()
     skip = {"Month progress bar", "Month progress bar compensation"}
     txs = []
     for t in rows:
+        if spend_id is not None and t["account_id"] != spend_id:
+            continue
+        if t["type"] == 2:  # transfer — not income/spend
+            continue
         cat = cats.get(t["category_id"]) or {}
         name = cat.get("name") or ""
         if name in skip:
@@ -79,17 +131,20 @@ def export_wallet_budgets(db_path: Path) -> list[dict]:
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     cats = {r["id"]: (r["name"] or "") for r in cur.execute("SELECT id, name FROM category")}
+    spend_id = resolve_spend_account_id(cur)
     skip = {"Month progress bar", "Month progress bar compensation"}
     out = []
     try:
         budgets = cur.execute(
-            "SELECT id, name, amount, spent, status, period, repeat, start_date, end_date, category_id "
+            "SELECT id, name, amount, spent, status, period, repeat, start_date, end_date, category_id, account_id "
             "FROM budget ORDER BY id"
         ).fetchall()
     except sqlite3.OperationalError:
         conn.close()
         return []
     for b in budgets:
+        if spend_id is not None and b["account_id"] is not None and b["account_id"] != spend_id:
+            continue
         name = (b["name"] or "").strip()
         if name in skip or name.lower().startswith("month progress"):
             continue
@@ -182,19 +237,31 @@ def main() -> None:
 
     txs = export_wallet_txs(db)
     budgets = export_wallet_budgets(db)
+    savings = export_savings_staging(db)
     print(f"Wallet txs: {len(txs)} (income {sum(1 for t in txs if t['type']=='Income')})")
     print(f"Wallet budgets: {len(budgets)}")
+    if savings:
+        print(f"Savings staging LDDS: €{savings.get('boursoLdds')} ({savings.get('transferCount')} transfers)")
 
     balances = load_json(finary_path) or {}
+    # Fall back to balances already in the previous snapshot / Drive merge
+    if not balances.get("pea"):
+        prev = load_json(SNAP) or {}
+        if isinstance(prev.get("balances"), dict):
+            balances = {**prev["balances"], **balances}
     history = load_json(HIST)
     balances = enrich_balances(balances, history)
     balances["budgets"] = budgets
+    if savings and savings.get("boursoLdds") is not None:
+        balances["boursoLdds"] = savings["boursoLdds"]
+        balances["boursoLddsSource"] = "money-manager:Savings"
 
     snap = {
         "lastSync": datetime.now(timezone.utc).isoformat(),
         "transactions": txs,
         "balances": balances,
         "budgets": budgets,
+        "savingsProfile": savings,
         "historyMeta": {
             "hasLivretA": bool(history and history.get("livretA")),
             "hasPeaCash": bool(history and (history.get("pea") or {}).get("cash")),
