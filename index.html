@@ -188,7 +188,17 @@ body:not(.locked) #unlock-overlay{display:none!important}
   border-top:1px solid rgba(126,160,211,0.16);
 }
 .perf-history[hidden]{display:none!important}
-.perf-history .chart-wrap{height:220px;background:rgba(7,13,22,0.28);border-color:rgba(126,160,211,0.16)}
+.perf-history .chart-wrap{height:260px;background:rgba(7,13,22,0.28);border-color:rgba(126,160,211,0.16)}
+.perf-hist-avg{
+  display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;
+  margin:0 0 10px;font-size:12px;color:var(--muted);
+}
+.perf-hist-avg strong{
+  font-family:var(--mono);font-size:15px;font-weight:600;color:var(--gold);
+  padding:6px 10px;border-radius:8px;
+  border:1px solid rgba(232,196,106,0.35);
+  background:rgba(232,196,106,0.10);
+}
 .fold{margin:0 0 22px}
 .fold-head{
   display:flex;align-items:flex-start;gap:8px;margin-bottom:14px;
@@ -530,6 +540,10 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
         <button type="button" class="on" data-perf-hist="overall" onclick="setPerfHistTab('overall')">Overall</button>
         <button type="button" data-perf-hist="you" onclick="setPerfHistTab('you')">You</button>
         <button type="button" data-perf-hist="markets" onclick="setPerfHistTab('markets')">Markets</button>
+      </div>
+      <div class="perf-hist-avg" id="perf-hist-avg" hidden>
+        <span>Average across bins</span>
+        <strong class="blur-val" id="perf-hist-avg-val">—</strong>
       </div>
       <div class="chart-wrap"><canvas id="perfHistChart"></canvas></div>
       <p class="traj-note" id="perf-hist-note"></p>
@@ -1880,12 +1894,11 @@ function drawPerfHistory() {
   const key = perfHistTab === 'you' ? 'you' : (perfHistTab === 'markets' ? 'markets' : 'overall');
   const title = key === 'you' ? 'You (controllable)' : (key === 'markets' ? 'Markets (non-controllable)' : 'Overall wealth change');
   const values = bins.map(b => b[key]);
+  // Prefer bins that actually have a number; for Overall/Markets skip null NW gaps.
   const known = values.filter(v => v != null && isFinite(v));
   const avg = known.length ? Math.round(known.reduce((s, v) => s + v, 0) / known.length) : null;
-  const avgLabel = avg == null
-    ? 'Average · n/a'
-    : (anonMode ? 'Average · •••' : `Average · ${fmtDelta(avg, null)}`);
-  const avgLine = avg == null ? bins.map(() => null) : bins.map(() => avg);
+  const avgText = avg == null ? 'n/a' : (anonMode ? '•••' : fmtDelta(avg, null));
+  const avgLabel = `Average · ${avgText}`;
   const colors = values.map(v => {
     if (v == null) return 'rgba(139,154,171,0.35)';
     if (v > 0) return 'rgba(107,207,155,0.85)';
@@ -1893,13 +1906,74 @@ function drawPerfHistory() {
     return 'rgba(139,154,171,0.55)';
   });
 
+  const avgChip = document.getElementById('perf-hist-avg');
+  const avgValEl = document.getElementById('perf-hist-avg-val');
+  if (avgChip && avgValEl) {
+    if (avg == null) {
+      avgChip.hidden = true;
+      avgValEl.textContent = '—';
+    } else {
+      avgChip.hidden = false;
+      avgValEl.textContent = avgText;
+      avgValEl.className = 'blur-val ' + deltaDir(avg);
+    }
+  }
+
+  // Drawn on top of bars so it can’t disappear behind Chart.js mixed-type quirks.
+  const avgGuidePlugin = {
+    id: 'perfAvgGuide',
+    afterDatasetsDraw(chart) {
+      if (avg == null) return;
+      const { ctx, chartArea, scales } = chart;
+      const yScale = scales.y;
+      if (!ctx || !chartArea || !yScale) return;
+      const y = yScale.getPixelForValue(avg);
+      if (!isFinite(y) || y < chartArea.top - 2 || y > chartArea.bottom + 2) return;
+      ctx.save();
+      ctx.beginPath();
+      ctx.setLineDash([8, 5]);
+      ctx.strokeStyle = '#e8c46a';
+      ctx.lineWidth = 2.5;
+      ctx.moveTo(chartArea.left, y);
+      ctx.lineTo(chartArea.right, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.font = '600 12px "IBM Plex Mono", ui-monospace, monospace';
+      const label = avgLabel;
+      const padX = 8, padY = 5;
+      const tw = ctx.measureText(label).width;
+      const boxW = tw + padX * 2;
+      const boxH = 12 + padY * 2;
+      let bx = chartArea.right - boxW - 6;
+      let by = y - boxH - 6;
+      if (by < chartArea.top + 4) by = y + 8;
+      if (bx < chartArea.left + 4) bx = chartArea.left + 4;
+      ctx.fillStyle = 'rgba(7,13,22,0.92)';
+      ctx.strokeStyle = 'rgba(232,196,106,0.65)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      const r = 6;
+      ctx.moveTo(bx + r, by);
+      ctx.arcTo(bx + boxW, by, bx + boxW, by + boxH, r);
+      ctx.arcTo(bx + boxW, by + boxH, bx, by + boxH, r);
+      ctx.arcTo(bx, by + boxH, bx, by, r);
+      ctx.arcTo(bx, by, bx + boxW, by, r);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#e8c46a';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, bx + padX, by + boxH / 2);
+      ctx.restore();
+    },
+  };
+
   charts.perfHist = new Chart(canvas.getContext('2d'), {
     type: 'bar',
     data: {
       labels: bins.map(b => b.label),
       datasets: [
         {
-          type: 'bar',
           label: title,
           data: values,
           backgroundColor: colors,
@@ -1908,22 +1982,22 @@ function drawPerfHistory() {
           borderSkipped: false,
           barPercentage: 0.88,
           categoryPercentage: 0.82,
-          order: 2,
         },
+        // Invisible dataset only so the legend can show the average amount clearly.
         {
           type: 'line',
           label: avgLabel,
-          data: avgLine,
+          data: bins.map(() => avg),
           borderColor: '#e8c46a',
           backgroundColor: '#e8c46a',
-          borderWidth: 2.5,
-          borderDash: [7, 5],
+          borderWidth: 2,
+          borderDash: [6, 4],
           pointRadius: 0,
           pointHoverRadius: 0,
-          pointHitRadius: 0,
           fill: false,
-          tension: 0,
-          order: 1,
+          showLine: true,
+          spanGaps: true,
+          order: 0,
         },
       ],
     },
@@ -1936,31 +2010,26 @@ function drawPerfHistory() {
           align: 'start',
           labels: {
             color: '#eef3f8',
-            boxWidth: 14,
-            boxHeight: 10,
-            padding: 14,
-            font: { size: 12, weight: '600', family: 'IBM Plex Mono, ui-monospace, monospace' },
-            usePointStyle: false,
+            boxWidth: 16,
+            boxHeight: 3,
+            padding: 16,
+            font: { size: 13, weight: '600', family: '"IBM Plex Mono", ui-monospace, monospace' },
           },
         },
         tooltip: {
           enabled: true,
           filter(item) {
-            // One tooltip row for the average line (not per-bin duplicates of the same avg).
             if (item.datasetIndex === 1) return item.dataIndex === 0;
             return true;
           },
           callbacks: {
             title(items) {
               const bar = items.find(i => i.datasetIndex === 0);
-              if (bar) return bins[bar.dataIndex]?.label || '';
-              return avgLabel;
+              return bar ? (bins[bar.dataIndex]?.label || '') : avgLabel;
             },
             label(c) {
-              if (c.datasetIndex === 1) {
-                return anonMode ? 'Average: •••' : (avg == null ? 'Average: n/a' : `Average: ${fmtDelta(avg, null)}`);
-              }
-              if (c.raw == null) return anonMode ? `${title}: •••` : `${title}: n/a`;
+              if (c.datasetIndex === 1) return `Average: ${avgText}`;
+              if (c.raw == null) return `${title}: n/a`;
               return anonMode ? `${title}: •••` : `${title}: ${fmtDelta(c.raw, null)}`;
             },
           },
@@ -1977,6 +2046,7 @@ function drawPerfHistory() {
         },
       },
     },
+    plugins: [avgGuidePlugin],
   });
 
   document.querySelectorAll('[data-perf-hist]').forEach(btn => {
@@ -1984,10 +2054,9 @@ function drawPerfHistory() {
   });
   const note = document.getElementById('perf-hist-note');
   if (note) {
-    const avgBit = avg == null ? '' : ` · avg ${anonMode ? '•••' : fmtDelta(avg, null)} over ${known.length} bins`;
     note.textContent = known.length
-      ? `${spec.note} · ${known.length}/${bins.length} bins with a wealth snapshot${avgBit}.`
-      : `${spec.note} · Need more NW history — Refresh a few times over weeks to fill bins.`;
+      ? `${spec.note} · avg ${avgText} across ${known.length}/${bins.length} bins.`
+      : `${spec.note} · Need more data in these bins before an average can be drawn.`;
   }
 }
 
