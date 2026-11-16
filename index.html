@@ -140,8 +140,8 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .hero-layout{
   position:relative;z-index:1;
   display:grid;
-  grid-template-columns:minmax(0,1.05fr) minmax(280px,0.95fr);
-  gap:20px 28px;
+  grid-template-columns:minmax(0,0.82fr) minmax(320px,1.18fr);
+  gap:20px 24px;
   align-items:stretch;
 }
 .hero-main{
@@ -180,18 +180,7 @@ body:not(.locked) #unlock-overlay{display:none!important}
   margin:0;padding:0;
 }
 .hero-perf[hidden]{display:none!important}
-.hero-perf-fold{
-  position:relative;z-index:1;
-  margin:16px 0 0;padding-top:16px;
-  border-top:1px solid rgba(126,160,211,0.16);
-}
-.hero-perf-fold .section-head h2{font-size:clamp(18px,3vw,22px);color:#fff}
-.hero-perf-fold .section-head p{color:rgba(238,243,248,.62);font-size:12px}
-.hero-perf-fold .fold-tog{
-  background:rgba(7,13,22,0.35);
-  border-color:rgba(126,160,211,0.22);
-}
-.perf-history .chart-wrap{height:260px;background:rgba(7,13,22,0.28);border-color:rgba(126,160,211,0.16)}
+.perf-history .chart-wrap{height:280px}
 .chart-toolbar{
   display:grid;
   grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);
@@ -573,53 +562,54 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
         </div>
       </aside>
     </div>
-    <div class="fold on hero-perf-fold" data-fold="hero-perf" id="perf-history">
-      <div class="fold-head">
-        <button type="button" class="fold-tog" aria-label="Collapse section" aria-expanded="true" onclick="toggleFold('hero-perf')">▼</button>
-        <div class="section-head">
-          <h2>Performance history</h2>
-          <p>Overall, you, and markets — per period or cumulative.</p>
-        </div>
-      </div>
-      <div class="fold-body perf-history">
-        <div class="chart-toolbar">
-          <div class="chart-toolbar-left">
-            <div class="chart-pane-tabs" role="tablist" aria-label="Period or cumulative">
-              <button type="button" class="on" data-perf-cum="period" onclick="setPerfHistCum('period')">Per period</button>
-              <button type="button" data-perf-cum="cumulative" onclick="setPerfHistCum('cumulative')">Cumulative</button>
-            </div>
-          </div>
-          <div class="chart-toolbar-mid">
-            <div class="chart-pane-tabs" role="tablist" aria-label="Performance history">
-              <button type="button" class="on" data-perf-hist="overall" onclick="setPerfHistTab('overall')">Overall</button>
-              <button type="button" data-perf-hist="you" onclick="setPerfHistTab('you')">You</button>
-              <button type="button" data-perf-hist="markets" onclick="setPerfHistTab('markets')">Markets</button>
-            </div>
-          </div>
-          <div class="chart-toolbar-right">
-            <div class="range-row" role="group" aria-label="History lookback" id="perf-hist-lookback">
-              <button type="button" data-perf-lb="6m" onclick="setPerfHistLookback('6m')">6M</button>
-              <button type="button" class="on" data-perf-lb="1y" onclick="setPerfHistLookback('1y')">1Y</button>
-              <button type="button" data-perf-lb="2y" onclick="setPerfHistLookback('2y')">2Y</button>
-              <button type="button" data-perf-lb="3y" onclick="setPerfHistLookback('3y')">3Y</button>
-              <button type="button" data-perf-lb="5y" onclick="setPerfHistLookback('5y')">5Y</button>
-              <button type="button" data-perf-lb="max" onclick="setPerfHistLookback('max')">Max</button>
-            </div>
-          </div>
-        </div>
-        <div class="perf-hist-avg" id="perf-hist-avg" hidden>
-          <span id="perf-hist-avg-lbl">Avg / bin</span>
-          <strong class="blur-val" id="perf-hist-avg-val">—</strong>
-          <span id="perf-hist-total-wrap" hidden>
-            <span>Total</span>
-            <strong class="blur-val" id="perf-hist-total-val">—</strong>
-          </span>
-        </div>
-        <div class="chart-wrap"><canvas id="perfHistChart"></canvas></div>
-        <p class="traj-note" id="perf-hist-note"></p>
+  </section>
+
+  <div class="fold on" data-fold="hero-perf" id="perf-history">
+    <div class="fold-head">
+      <button type="button" class="fold-tog" aria-label="Collapse section" aria-expanded="true" onclick="toggleFold('hero-perf')">▼</button>
+      <div class="section-head">
+        <h2>Performance history</h2>
+        <p>Overall, you, and markets — per period or cumulative.</p>
       </div>
     </div>
-  </section>
+    <div class="fold-body perf-history">
+      <div class="chart-toolbar">
+        <div class="chart-toolbar-left">
+          <div class="chart-pane-tabs" role="tablist" aria-label="Period or cumulative">
+            <button type="button" class="on" data-perf-cum="period" onclick="setPerfHistCum('period')">Per period</button>
+            <button type="button" data-perf-cum="cumulative" onclick="setPerfHistCum('cumulative')">Cumulative</button>
+          </div>
+        </div>
+        <div class="chart-toolbar-mid">
+          <div class="chart-pane-tabs" role="tablist" aria-label="Performance history">
+            <button type="button" class="on" data-perf-hist="overall" onclick="setPerfHistTab('overall')">Overall</button>
+            <button type="button" data-perf-hist="you" onclick="setPerfHistTab('you')">You</button>
+            <button type="button" data-perf-hist="markets" onclick="setPerfHistTab('markets')">Markets</button>
+          </div>
+        </div>
+        <div class="chart-toolbar-right">
+          <div class="range-row" role="group" aria-label="History lookback" id="perf-hist-lookback">
+            <button type="button" data-perf-lb="6m" onclick="setPerfHistLookback('6m')">6M</button>
+            <button type="button" class="on" data-perf-lb="1y" onclick="setPerfHistLookback('1y')">1Y</button>
+            <button type="button" data-perf-lb="2y" onclick="setPerfHistLookback('2y')">2Y</button>
+            <button type="button" data-perf-lb="3y" onclick="setPerfHistLookback('3y')">3Y</button>
+            <button type="button" data-perf-lb="5y" onclick="setPerfHistLookback('5y')">5Y</button>
+            <button type="button" data-perf-lb="max" onclick="setPerfHistLookback('max')">Max</button>
+          </div>
+        </div>
+      </div>
+      <div class="perf-hist-avg" id="perf-hist-avg" hidden>
+        <span id="perf-hist-avg-lbl">Avg / bin</span>
+        <strong class="blur-val" id="perf-hist-avg-val">—</strong>
+        <span id="perf-hist-total-wrap" hidden>
+          <span>Total</span>
+          <strong class="blur-val" id="perf-hist-total-val">—</strong>
+        </span>
+      </div>
+      <div class="chart-wrap"><canvas id="perfHistChart"></canvas></div>
+      <p class="traj-note" id="perf-hist-note"></p>
+    </div>
+  </div>
 
   <nav class="tabs" role="tablist" aria-label="Dashboard sections">
     <button type="button" class="tab-btn on" data-tab="overview" onclick="setTab('overview')">Overview</button>
