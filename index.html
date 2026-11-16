@@ -172,12 +172,41 @@ body:not(.locked) #unlock-overlay{display:none!important}
 }
 .hero-delta .hero-arrow{font-size:1.05em;line-height:1}
 .hero-delta.flat{color:var(--muted)}
+.hero-perf-row{
+  display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;
+  gap:12px 18px;margin:8px 0 16px;
+}
 .hero-perf{
   display:flex;flex-wrap:wrap;gap:14px 28px;
-  margin:8px 0 16px;
-  padding:0;
+  margin:0;padding:0;
 }
 .hero-perf[hidden]{display:none!important}
+.hero-perf-row .btn{padding:8px 12px;font-size:11px;flex-shrink:0}
+.perf-history{
+  position:relative;z-index:1;
+  margin:8px 0 0;padding-top:16px;
+  border-top:1px solid rgba(126,160,211,0.16);
+}
+.perf-history[hidden]{display:none!important}
+.perf-history .chart-wrap{height:220px;background:rgba(7,13,22,0.28);border-color:rgba(126,160,211,0.16)}
+.fold{margin:0 0 22px}
+.fold-head{
+  display:flex;align-items:flex-start;gap:8px;margin-bottom:14px;
+}
+.fold-head .section-head{flex:1;margin-bottom:0;min-width:0}
+.fold-tog{
+  flex:0 0 auto;margin-top:4px;
+  width:28px;height:28px;border:1px solid var(--line);border-radius:8px;
+  background:rgba(16,28,44,.55);color:var(--muted);cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;
+  font-size:11px;line-height:1;padding:0;
+  transition:transform .18s ease,color .18s ease,border-color .18s ease;
+}
+.fold-tog:hover{color:var(--text);border-color:rgba(126,160,211,.35)}
+.fold.on .fold-tog{transform:rotate(0deg)}
+.fold:not(.on) .fold-tog{transform:rotate(-90deg)}
+.fold:not(.on) .fold-body{display:none}
+.fold:not(.on) .fold-head{margin-bottom:0}
 .hero-perf > div{min-width:0}
 .hero-perf span{
   display:block;
@@ -467,15 +496,18 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
             </select>
           </label>
         </div>
-        <div class="hero-perf" id="hero-perf" hidden>
-          <div title="Wallet income − spend over the same comparison window — what you control">
-            <span>You</span>
-            <strong class="blur-val flat" id="hero-perf-you">—</strong>
+        <div class="hero-perf-row">
+          <div class="hero-perf" id="hero-perf" hidden>
+            <div title="Wallet income − spend over the same comparison window — what you control">
+              <span>You</span>
+              <strong class="blur-val flat" id="hero-perf-you">—</strong>
+            </div>
+            <div title="Wealth move not explained by wallet cashflow — mostly PEA mark-to-market and other revaluations">
+              <span>Markets</span>
+              <strong class="blur-val flat" id="hero-perf-markets">—</strong>
+            </div>
           </div>
-          <div title="Wealth move not explained by wallet cashflow — mostly PEA mark-to-market and other revaluations">
-            <span>Markets</span>
-            <strong class="blur-val flat" id="hero-perf-markets">—</strong>
-          </div>
+          <button type="button" class="btn" id="perf-hist-btn" onclick="togglePerfHistory()">Last 12 months</button>
         </div>
         <div class="hero-split" id="hero-split"></div>
         <div class="hero-cta">
@@ -493,6 +525,15 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
         </div>
       </aside>
     </div>
+    <div class="perf-history" id="perf-history" hidden>
+      <div class="chart-pane-tabs" role="tablist" aria-label="Performance history">
+        <button type="button" class="on" data-perf-hist="overall" onclick="setPerfHistTab('overall')">Overall</button>
+        <button type="button" data-perf-hist="you" onclick="setPerfHistTab('you')">You</button>
+        <button type="button" data-perf-hist="markets" onclick="setPerfHistTab('markets')">Markets</button>
+      </div>
+      <div class="chart-wrap"><canvas id="perfHistChart"></canvas></div>
+      <p class="traj-note" id="perf-hist-note"></p>
+    </div>
   </section>
 
   <nav class="tabs" role="tablist" aria-label="Dashboard sections">
@@ -503,89 +544,129 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
     <button type="button" class="tab-btn" data-tab="staging" onclick="setTab('staging')">Staging</button>
   </nav>
   <section class="tab-panel on" id="panel-overview">
-    <div class="section-head">
-      <h2>Total wealth</h2>
-      <p>Overall net worth — existing trail and a forward playground. Switch panes instead of stacking charts.</p>
-  </div>
-    <div class="chart-pane-tabs" role="tablist" aria-label="Wealth chart view">
-      <button type="button" class="on" data-pane-for="wealth" data-pane="existing" onclick="setChartPane('wealth','existing')">Existing</button>
-      <button type="button" data-pane-for="wealth" data-pane="future" onclick="setChartPane('wealth','future')">Future</button>
-</div>
-    <div class="chart-pane on" data-chart-pane="wealth" data-pane="existing">
-      <div class="range-row" role="group" aria-label="Wealth chart range"><button type="button" data-range="1M" onclick="setChartRange('1M')">1M</button><button type="button" data-range="3M" onclick="setChartRange('3M')">3M</button><button type="button" data-range="1Y" onclick="setChartRange('1Y')">1Y</button><button type="button" data-range="3Y" onclick="setChartRange('3Y')">3Y</button><button type="button" data-range="5Y" onclick="setChartRange('5Y')">5Y</button><button type="button" data-range="Max" onclick="setChartRange('Max')">Max</button></div>
-      <div class="chart-style-bar" data-chart-style="nwHist">
-        <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('nwHist')"> Discrete</label>
-        <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
-          <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
-          <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('nwHist')">
-        </label>
-    </div>
-      <div class="chart-wrap"><canvas id="nwHistChart"></canvas></div>
-      <p class="traj-note" id="nw-hist-note"></p>
-    </div>
-    <div class="chart-pane" data-chart-pane="wealth" data-pane="future">
-      <div class="proj-controls">
-        <label class="proj-slider">
-          <span>Monthly invest <strong data-proj-monthly-val>€700</strong></span>
-          <input type="range" data-proj-monthly min="0" max="2000" step="50" value="700" oninput="onProjControlsChange()">
-        </label>
-        <label class="proj-slider">
-          <span>Horizon <strong data-proj-years-val>10y</strong></span>
-          <input type="range" data-proj-years min="1" max="30" step="1" value="10" oninput="onProjControlsChange()">
-        </label>
-        <label class="proj-slider">
-          <span>Growth (selected) <strong data-proj-rate-val>7%</strong></span>
-          <input type="range" data-proj-rate min="0" max="15" step="0.5" value="7" oninput="onProjControlsChange()">
-        </label>
-  </div>
-      <div class="chart-style-bar" data-chart-style="nwProj">
-        <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('nwProj')"> Discrete</label>
-        <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
-          <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
-          <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('nwProj')">
-        </label>
+    <div class="fold on" data-fold="overview-wealth">
+      <div class="fold-head">
+        <button type="button" class="fold-tog" aria-label="Collapse section" aria-expanded="true" onclick="toggleFold('overview-wealth')">▼</button>
+        <div class="section-head">
+          <h2>Total wealth</h2>
+          <p>Overall net worth — existing trail and a forward playground. Switch panes instead of stacking charts.</p>
+        </div>
       </div>
-      <div class="chart-wrap"><canvas id="nwProjChart"></canvas></div>
-      <p class="traj-note" id="nw-proj-note"></p>
-</div>
-
-    <div class="section-head" style="margin-top:28px">
-      <h2>At a glance</h2>
-      <p>Quick pulse numbers — the story sits in the check-in above.</p>
+      <div class="fold-body">
+        <div class="chart-pane-tabs" role="tablist" aria-label="Wealth chart view">
+          <button type="button" class="on" data-pane-for="wealth" data-pane="existing" onclick="setChartPane('wealth','existing')">Existing</button>
+          <button type="button" data-pane-for="wealth" data-pane="future" onclick="setChartPane('wealth','future')">Future</button>
+        </div>
+        <div class="chart-pane on" data-chart-pane="wealth" data-pane="existing">
+          <div class="range-row" role="group" aria-label="Wealth chart range"><button type="button" data-range="1M" onclick="setChartRange('1M')">1M</button><button type="button" data-range="3M" onclick="setChartRange('3M')">3M</button><button type="button" data-range="1Y" onclick="setChartRange('1Y')">1Y</button><button type="button" data-range="3Y" onclick="setChartRange('3Y')">3Y</button><button type="button" data-range="5Y" onclick="setChartRange('5Y')">5Y</button><button type="button" data-range="Max" onclick="setChartRange('Max')">Max</button></div>
+          <div class="chart-style-bar" data-chart-style="nwHist">
+            <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('nwHist')"> Discrete</label>
+            <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
+              <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
+              <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('nwHist')">
+            </label>
+          </div>
+          <div class="chart-wrap"><canvas id="nwHistChart"></canvas></div>
+          <p class="traj-note" id="nw-hist-note"></p>
+        </div>
+        <div class="chart-pane" data-chart-pane="wealth" data-pane="future">
+          <div class="proj-controls">
+            <label class="proj-slider">
+              <span>Monthly invest <strong data-proj-monthly-val>€700</strong></span>
+              <input type="range" data-proj-monthly min="0" max="2000" step="50" value="700" oninput="onProjControlsChange()">
+            </label>
+            <label class="proj-slider">
+              <span>Horizon <strong data-proj-years-val>10y</strong></span>
+              <input type="range" data-proj-years min="1" max="30" step="1" value="10" oninput="onProjControlsChange()">
+            </label>
+            <label class="proj-slider">
+              <span>Growth (selected) <strong data-proj-rate-val>7%</strong></span>
+              <input type="range" data-proj-rate min="0" max="15" step="0.5" value="7" oninput="onProjControlsChange()">
+            </label>
+          </div>
+          <div class="chart-style-bar" data-chart-style="nwProj">
+            <label class="chart-style-check"><input type="checkbox" data-chart-discrete onchange="onChartStyleChange('nwProj')"> Discrete</label>
+            <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
+              <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
+              <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('nwProj')">
+            </label>
+          </div>
+          <div class="chart-wrap"><canvas id="nwProjChart"></canvas></div>
+          <p class="traj-note" id="nw-proj-note"></p>
+        </div>
+      </div>
     </div>
-    <div class="doing-pulse" id="overview-pulse"></div>
+
+    <div class="fold on" data-fold="overview-pulse">
+      <div class="fold-head">
+        <button type="button" class="fold-tog" aria-label="Collapse section" aria-expanded="true" onclick="toggleFold('overview-pulse')">▼</button>
+        <div class="section-head">
+          <h2>At a glance</h2>
+          <p>Quick pulse numbers — the story sits in the check-in above.</p>
+        </div>
+      </div>
+      <div class="fold-body">
+        <div class="doing-pulse" id="overview-pulse"></div>
+      </div>
+    </div>
   </section>
 
   <section class="tab-panel" id="panel-spend">
-    <div class="section-head">
-      <h2>This month</h2>
-      <p id="cashflow-sub">Income, budgets, spend, and latest movements.</p>
+    <div class="fold on" data-fold="spend-cashflow">
+      <div class="fold-head">
+        <button type="button" class="fold-tog" aria-label="Collapse section" aria-expanded="true" onclick="toggleFold('spend-cashflow')">▼</button>
+        <div class="section-head">
+          <h2>This month</h2>
+          <p id="cashflow-sub">Income, budgets, spend, and latest movements.</p>
+        </div>
+      </div>
+      <div class="fold-body">
+        <div id="spend-tab-boost" class="tab-boost" style="display:none"></div>
+        <div class="month-grid">
+          <div>
+            <div class="stat-pair">
+              <div class="stat"><div class="stat-lbl">Income</div><div class="stat-val pos blur-val" id="stat-inc">—</div></div>
+              <div class="stat"><div class="stat-lbl">Spent</div><div class="stat-val blur-val" id="stat-exp">—</div></div>
+            </div>
+            <div class="stat"><div class="stat-lbl">Net</div><div class="stat-val blur-val" id="stat-net">—</div></div>
+            <div id="inc-breakdown" class="inc-breakdown" style="margin-top:14px"></div>
+            <div class="fold on" data-fold="spend-budgets" style="margin-top:18px">
+              <div class="fold-head">
+                <button type="button" class="fold-tog" aria-label="Collapse section" aria-expanded="true" onclick="toggleFold('spend-budgets')">▼</button>
+                <div class="section-head" style="margin:0"><h2 style="font-size:18px">Budgets</h2><p>From Wallet Manager · vs actual this month</p></div>
+              </div>
+              <div class="fold-body">
+                <div id="budget-list"></div>
+                <div id="cat-bars" style="margin-top:18px"></div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="fold on" data-fold="spend-latest">
+              <div class="fold-head">
+                <button type="button" class="fold-tog" aria-label="Collapse section" aria-expanded="true" onclick="toggleFold('spend-latest')">▼</button>
+                <div class="section-head" style="margin:0"><h2 style="font-size:20px">Latest</h2><p id="feed-count"></p></div>
+              </div>
+              <div class="fold-body">
+                <div class="feed" id="expense-list"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div id="spend-tab-boost" class="tab-boost" style="display:none"></div>
-    <div class="month-grid">
-      <div>
-        <div class="stat-pair">
-          <div class="stat"><div class="stat-lbl">Income</div><div class="stat-val pos blur-val" id="stat-inc">—</div></div>
-          <div class="stat"><div class="stat-lbl">Spent</div><div class="stat-val blur-val" id="stat-exp">—</div></div>
-  </div>
-        <div class="stat"><div class="stat-lbl">Net</div><div class="stat-val blur-val" id="stat-net">—</div></div>
-        <div id="inc-breakdown" class="inc-breakdown" style="margin-top:14px"></div>
-        <div class="section-head" style="margin:22px 0 8px"><h2 style="font-size:18px">Budgets</h2><p>From Wallet Manager · vs actual this month</p></div>
-        <div id="budget-list"></div>
-        <div id="cat-bars" style="margin-top:18px"></div>
-</div>
-      <div>
-        <div class="section-head" style="margin-bottom:8px"><h2 style="font-size:20px">Latest</h2><p id="feed-count"></p></div>
-        <div class="feed" id="expense-list"></div>
-    </div>
-  </div>
   </section>
 
   <section class="tab-panel" id="panel-pea">
-    <div class="section-head">
-      <h2>PEA</h2>
-      <p>Per-fund performance, then Existing funding history or Future projections — one chart at a time.</p>
-</div>
+    <div class="fold on" data-fold="pea">
+      <div class="fold-head">
+        <button type="button" class="fold-tog" aria-label="Collapse section" aria-expanded="true" onclick="toggleFold('pea')">▼</button>
+        <div class="section-head">
+          <h2>PEA</h2>
+          <p>Per-fund performance, then Existing funding history or Future projections — one chart at a time.</p>
+        </div>
+      </div>
+      <div class="fold-body">
     <div id="pea-tab-boost" class="tab-boost" style="display:none"></div>
     <div id="pea-holdings" style="margin-bottom:18px"></div>
 
@@ -638,13 +719,20 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
       <div class="chart-wrap"><canvas id="projChart"></canvas></div>
       <p class="traj-note" id="proj-note"></p>
     </div>
+      </div>
+    </div>
   </section>
 
   <section class="tab-panel" id="panel-livret">
-    <div class="section-head">
-      <h2>Livret A</h2>
-      <p>Buffer money you are not planning to spend — separate from LCL LDDS sinking funds.</p>
-    </div>
+    <div class="fold on" data-fold="livret">
+      <div class="fold-head">
+        <button type="button" class="fold-tog" aria-label="Collapse section" aria-expanded="true" onclick="toggleFold('livret')">▼</button>
+        <div class="section-head">
+          <h2>Livret A</h2>
+          <p>Buffer money you are not planning to spend — separate from LCL LDDS sinking funds.</p>
+        </div>
+      </div>
+      <div class="fold-body">
     <div id="livret-tab-boost" class="tab-boost" style="display:none"></div>
     <div class="stat" style="max-width:280px;margin-bottom:12px">
       <div class="stat-lbl">Balance</div>
@@ -686,15 +774,24 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
       <div class="chart-wrap"><canvas id="livretProjChart"></canvas></div>
       <p class="traj-note" id="livret-proj-note"></p>
   </div>
+      </div>
+    </div>
   </section>
 
   <section class="tab-panel" id="panel-staging">
-    <div class="section-head">
-      <h2>Bourso LDDS staging</h2>
-      <p>The live pot for month-end PEA funding — watch it shrink when you top up allowance.</p>
-    </div>
+    <div class="fold on" data-fold="staging">
+      <div class="fold-head">
+        <button type="button" class="fold-tog" aria-label="Collapse section" aria-expanded="true" onclick="toggleFold('staging')">▼</button>
+        <div class="section-head">
+          <h2>Bourso LDDS staging</h2>
+          <p>The live pot for month-end PEA funding — watch it shrink when you top up allowance.</p>
+        </div>
+      </div>
+      <div class="fold-body">
     <div id="staging-tab-boost" class="tab-boost" style="display:none"></div>
     <div id="staging-body"></div>
+      </div>
+    </div>
   </section>
     </div>
 
@@ -711,7 +808,7 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
     <p class="hint">Not counted in net worth. Used on the Staging tab as expected PEA fuel.</p>
     <label for="modal-gemini">Gemini API key (browser only)</label>
     <input id="modal-gemini" type="password" autocomplete="off" placeholder="AIza…">
-    <p class="hint">Required for the live “How you're doing” check-in under the hero. Without it you only get the offline template.</p>
+    <p class="hint">Required for the live “How you're doing” check-in in the hero. Without it you only get the offline template.</p>
     <label for="modal-export-url">Apps Script web app URL</label>
     <input id="modal-export-url" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec">
     <p class="hint">Needed for live Refresh. Unlock still loads the encrypted vault without it. After updating WalletExport.gs, redeploy the web app.</p>
@@ -958,6 +1055,8 @@ function mountDashboard() {
     const lbl = document.getElementById('anon-lbl');
     if (lbl) lbl.textContent = anonMode ? 'Anon ON' : 'Anon';
   }
+  syncFolds();
+  syncPerfHistButton();
 }
 
 function setLockedUI(locked) {
@@ -1642,6 +1741,207 @@ function onHeroVsChange() {
   // Hero comparison window is part of the check-in dossier — drop stale cache and nudge refresh.
   clearAiCache();
   setCheckinStatus('Comparison window changed — tap Refresh check-in for an updated read', 'warn');
+  syncPerfHistButton();
+  const hist = document.getElementById('perf-history');
+  if (hist && !hist.hidden) drawPerfHistory();
+}
+
+/** Section collapse — triangle rotates; body hides. Persisted per id. */
+function isFoldOpen(id) {
+  try { return localStorage.getItem('dashboard_fold_' + id) !== '0'; }
+  catch { return true; }
+}
+function syncFolds() {
+  document.querySelectorAll('[data-fold]').forEach(el => {
+    const id = el.getAttribute('data-fold');
+    if (!id) return;
+    const open = isFoldOpen(id);
+    el.classList.toggle('on', open);
+    const tog = el.querySelector('.fold-head > .fold-tog');
+    if (tog) tog.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+}
+function toggleFold(id) {
+  const el = document.querySelector(`[data-fold="${id}"]`);
+  if (!el) return;
+  const open = !el.classList.contains('on');
+  el.classList.toggle('on', open);
+  try { localStorage.setItem('dashboard_fold_' + id, open ? '1' : '0'); } catch (_) {}
+  const tog = el.querySelector('.fold-head > .fold-tog');
+  if (tog) tog.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (open) {
+    requestAnimationFrame(() => {
+      // Chart.js needs a visible canvas to size correctly after un-collapse.
+      if (id === 'overview-wealth') {
+        if (chartPaneMode.wealth === 'future') drawNwProjection();
+        else drawNwHistory();
+      }
+      if (id === 'pea') {
+        if (chartPaneMode.pea === 'future') drawPeaProjection();
+        else drawPeaHistory();
+      }
+      if (id === 'livret') {
+        if (chartPaneMode.livret === 'future') drawLivretProjection();
+        else drawLivretChart();
+      }
+    });
+  }
+}
+
+let perfHistTab = localStorage.getItem('dashboard_perf_hist_tab') || 'overall';
+let perfHistoryOpen = localStorage.getItem('dashboard_perf_hist_open') === '1';
+
+function perfHistorySpec() {
+  if (heroVsMode === '3m') {
+    return { monthsPerBin: 3, bins: 8, btn: 'Last 8 × 3 months', note: 'Each bin = 3 calendar months (matches “vs 3 months”).' };
+  }
+  if (heroVsMode === '1y') {
+    return { monthsPerBin: 12, bins: 5, btn: 'Last 5 years', note: 'Each bin = one calendar year (matches “vs 1 year”).' };
+  }
+  return { monthsPerBin: 1, bins: 12, btn: 'Last 12 months', note: 'Each bin = one calendar month (matches “vs previous month”).' };
+}
+
+function syncPerfHistButton() {
+  const btn = document.getElementById('perf-hist-btn');
+  if (!btn) return;
+  const spec = perfHistorySpec();
+  btn.textContent = (perfHistoryOpen ? 'Hide · ' : '') + spec.btn;
+}
+
+function nwAtOrBefore(atMs) {
+  let best = null;
+  for (const e of nwCandidates()) {
+    if (e.at <= atMs) best = e;
+    else break;
+  }
+  return best;
+}
+
+/** Monthly / multi-month bins: overall ΔNW, you (wallet), markets (residual). */
+function buildPerfHistoryBins(txs) {
+  const spec = perfHistorySpec();
+  const now = new Date();
+  const bins = [];
+  // Anchor end of latest bin at current month (aligned to monthsPerBin for 3m/1y).
+  let cursor = new Date(now.getFullYear(), now.getMonth(), 1);
+  if (spec.monthsPerBin > 1) {
+    const m = cursor.getMonth();
+    const aligned = Math.floor(m / spec.monthsPerBin) * spec.monthsPerBin;
+    cursor = new Date(cursor.getFullYear(), aligned, 1);
+  }
+  for (let i = 0; i < spec.bins; i++) {
+    const endExclusive = new Date(cursor.getFullYear(), cursor.getMonth() + spec.monthsPerBin, 1);
+    const from = cursor.getTime();
+    const to = Math.min(Date.now(), endExclusive.getTime() - 1);
+    const startSnap = nwAtOrBefore(from - 1) || nwAtOrBefore(from);
+    const endSnap = nwAtOrBefore(to);
+    const overall = (startSnap && endSnap) ? Math.round(endSnap.nw - startSnap.nw) : null;
+    const you = Math.round(walletNetInWindow(txs || STATE.transactions, from, to).net);
+    const markets = overall != null ? Math.round(overall - you) : null;
+    let label;
+    if (spec.monthsPerBin === 12) {
+      label = String(cursor.getFullYear());
+    } else if (spec.monthsPerBin === 3) {
+      label = 'Q' + (Math.floor(cursor.getMonth() / 3) + 1) + ' ’' + String(cursor.getFullYear()).slice(2);
+    } else {
+      label = cursor.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+    }
+    bins.push({ label, from, to, overall, you, markets });
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() - spec.monthsPerBin, 1);
+  }
+  return { spec, bins: bins.reverse() };
+}
+
+function togglePerfHistory() {
+  perfHistoryOpen = !perfHistoryOpen;
+  try { localStorage.setItem('dashboard_perf_hist_open', perfHistoryOpen ? '1' : '0'); } catch (_) {}
+  const el = document.getElementById('perf-history');
+  if (el) el.hidden = !perfHistoryOpen;
+  syncPerfHistButton();
+  if (perfHistoryOpen) drawPerfHistory();
+}
+
+function setPerfHistTab(tab) {
+  perfHistTab = tab === 'you' || tab === 'markets' ? tab : 'overall';
+  try { localStorage.setItem('dashboard_perf_hist_tab', perfHistTab); } catch (_) {}
+  document.querySelectorAll('[data-perf-hist]').forEach(btn => {
+    btn.classList.toggle('on', btn.getAttribute('data-perf-hist') === perfHistTab);
+  });
+  drawPerfHistory();
+}
+
+function drawPerfHistory() {
+  const canvas = document.getElementById('perfHistChart');
+  if (!canvas) return;
+  if (charts.perfHist) { charts.perfHist.destroy(); delete charts.perfHist; }
+
+  const { spec, bins } = buildPerfHistoryBins(STATE.transactions);
+  const key = perfHistTab === 'you' ? 'you' : (perfHistTab === 'markets' ? 'markets' : 'overall');
+  const title = key === 'you' ? 'You (controllable)' : (key === 'markets' ? 'Markets (non-controllable)' : 'Overall wealth change');
+  const values = bins.map(b => b[key]);
+  const colors = values.map(v => {
+    if (v == null) return 'rgba(139,154,171,0.35)';
+    if (v > 0) return 'rgba(107,207,155,0.85)';
+    if (v < 0) return 'rgba(232,138,138,0.85)';
+    return 'rgba(139,154,171,0.55)';
+  });
+
+  charts.perfHist = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: bins.map(b => b.label),
+      datasets: [{
+        label: title,
+        data: values,
+        backgroundColor: colors,
+        borderWidth: 0,
+        borderRadius: 5,
+        borderSkipped: false,
+        barPercentage: 0.88,
+        categoryPercentage: 0.82,
+      }],
+    },
+    options: {
+      ...chartHoverOpts(),
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          enabled: true,
+          callbacks: {
+            title(items) {
+              const i = items[0]?.dataIndex;
+              return i == null ? '' : (bins[i]?.label || '');
+            },
+            label(c) {
+              if (c.raw == null) return anonMode ? `${title}: •••` : `${title}: n/a`;
+              return anonMode ? `${title}: •••` : `${title}: ${fmtDelta(c.raw, null)}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: '#8b9aab', font: { size: 10 }, maxRotation: 0, autoSkip: true },
+          grid: { display: false },
+        },
+        y: {
+          ticks: { callback: v => fmtAxis(v), color: '#8b9aab', font: { size: 10 } },
+          grid: { color: 'rgba(126,160,211,0.08)' },
+        },
+      },
+    },
+  });
+
+  document.querySelectorAll('[data-perf-hist]').forEach(btn => {
+    btn.classList.toggle('on', btn.getAttribute('data-perf-hist') === perfHistTab);
+  });
+  const note = document.getElementById('perf-hist-note');
+  if (note) {
+    const known = values.filter(v => v != null);
+    note.textContent = known.length
+      ? `${spec.note} · ${known.length}/${bins.length} bins with a wealth snapshot.`
+      : `${spec.note} · Need more NW history — Refresh a few times over weeks to fill bins.`;
+  }
 }
 
 function setTabBoost(id, boost) {
@@ -1719,6 +2019,13 @@ function renderHero() {
   setTabBoost('livret-tab-boost', boosts.livret);
   setTabBoost('spend-tab-boost', boosts.spend);
   setTabBoost('staging-tab-boost', boosts.staging);
+
+  syncPerfHistButton();
+  const hist = document.getElementById('perf-history');
+  if (hist) {
+    hist.hidden = !perfHistoryOpen;
+    if (perfHistoryOpen) drawPerfHistory();
+  }
 }
 
 function monthBucket(txs) {
@@ -2881,6 +3188,7 @@ function renderAll(txs) {
     btn.classList.toggle('on', btn.getAttribute('data-range') === chartRange);
   });
   syncChartPanesUI();
+  syncFolds();
   setTab(activeTab, false);
 }
 

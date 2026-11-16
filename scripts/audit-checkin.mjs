@@ -65,6 +65,9 @@ const required = [
   ['hero perf you/markets', /id="hero-perf-you"/],
   ['controllable in dossier', /controllablePerfEur/],
   ['goThisMonth scrolls', /function goThisMonth\(/],
+  ['perf history bins', /function buildPerfHistoryBins\(/],
+  ['perf hist bar chart', /type:\s*'bar'/],
+  ['section folds', /function toggleFold\(/],
 ];
 
 for (const [name, re] of required) {
