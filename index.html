@@ -1880,6 +1880,12 @@ function drawPerfHistory() {
   const key = perfHistTab === 'you' ? 'you' : (perfHistTab === 'markets' ? 'markets' : 'overall');
   const title = key === 'you' ? 'You (controllable)' : (key === 'markets' ? 'Markets (non-controllable)' : 'Overall wealth change');
   const values = bins.map(b => b[key]);
+  const known = values.filter(v => v != null && isFinite(v));
+  const avg = known.length ? Math.round(known.reduce((s, v) => s + v, 0) / known.length) : null;
+  const avgLabel = avg == null
+    ? 'Average · n/a'
+    : (anonMode ? 'Average · •••' : `Average · ${fmtDelta(avg, null)}`);
+  const avgLine = avg == null ? bins.map(() => null) : bins.map(() => avg);
   const colors = values.map(v => {
     if (v == null) return 'rgba(139,154,171,0.35)';
     if (v > 0) return 'rgba(107,207,155,0.85)';
@@ -1891,29 +1897,69 @@ function drawPerfHistory() {
     type: 'bar',
     data: {
       labels: bins.map(b => b.label),
-      datasets: [{
-        label: title,
-        data: values,
-        backgroundColor: colors,
-        borderWidth: 0,
-        borderRadius: 5,
-        borderSkipped: false,
-        barPercentage: 0.88,
-        categoryPercentage: 0.82,
-      }],
+      datasets: [
+        {
+          type: 'bar',
+          label: title,
+          data: values,
+          backgroundColor: colors,
+          borderWidth: 0,
+          borderRadius: 5,
+          borderSkipped: false,
+          barPercentage: 0.88,
+          categoryPercentage: 0.82,
+          order: 2,
+        },
+        {
+          type: 'line',
+          label: avgLabel,
+          data: avgLine,
+          borderColor: '#e8c46a',
+          backgroundColor: '#e8c46a',
+          borderWidth: 2.5,
+          borderDash: [7, 5],
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          pointHitRadius: 0,
+          fill: false,
+          tension: 0,
+          order: 1,
+        },
+      ],
     },
     options: {
       ...chartHoverOpts(),
       plugins: {
-        legend: { display: false },
+        legend: {
+          display: true,
+          position: 'top',
+          align: 'start',
+          labels: {
+            color: '#eef3f8',
+            boxWidth: 14,
+            boxHeight: 10,
+            padding: 14,
+            font: { size: 12, weight: '600', family: 'IBM Plex Mono, ui-monospace, monospace' },
+            usePointStyle: false,
+          },
+        },
         tooltip: {
           enabled: true,
+          filter(item) {
+            // One tooltip row for the average line (not per-bin duplicates of the same avg).
+            if (item.datasetIndex === 1) return item.dataIndex === 0;
+            return true;
+          },
           callbacks: {
             title(items) {
-              const i = items[0]?.dataIndex;
-              return i == null ? '' : (bins[i]?.label || '');
+              const bar = items.find(i => i.datasetIndex === 0);
+              if (bar) return bins[bar.dataIndex]?.label || '';
+              return avgLabel;
             },
             label(c) {
+              if (c.datasetIndex === 1) {
+                return anonMode ? 'Average: •••' : (avg == null ? 'Average: n/a' : `Average: ${fmtDelta(avg, null)}`);
+              }
               if (c.raw == null) return anonMode ? `${title}: •••` : `${title}: n/a`;
               return anonMode ? `${title}: •••` : `${title}: ${fmtDelta(c.raw, null)}`;
             },
@@ -1938,9 +1984,9 @@ function drawPerfHistory() {
   });
   const note = document.getElementById('perf-hist-note');
   if (note) {
-    const known = values.filter(v => v != null);
+    const avgBit = avg == null ? '' : ` · avg ${anonMode ? '•••' : fmtDelta(avg, null)} over ${known.length} bins`;
     note.textContent = known.length
-      ? `${spec.note} · ${known.length}/${bins.length} bins with a wealth snapshot.`
+      ? `${spec.note} · ${known.length}/${bins.length} bins with a wealth snapshot${avgBit}.`
       : `${spec.note} · Need more NW history — Refresh a few times over weeks to fill bins.`;
   }
 }
