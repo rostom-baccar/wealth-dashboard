@@ -565,8 +565,8 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
               <span>You</span>
               <strong class="blur-val flat" id="hero-perf-you">—</strong>
             </div>
-            <div title="Wealth move not explained by wallet cashflow — mostly PEA mark-to-market and other revaluations">
-              <span>Markets</span>
+            <div title="Residual = overall Δ net worth − You. Not PEA-only: includes mark-to-market, Livret moves outside the wallet, and timing noise.">
+              <span>Residual</span>
               <strong class="blur-val flat" id="hero-perf-markets">—</strong>
             </div>
           </div>
@@ -1730,27 +1730,51 @@ function computeHeroNwBoost() {
   };
 }
 
+/** How close a historical PEA/Livret reading must be to the hero baseline date. */
+function heroAccountSlackMs(mode) {
+  if (mode === 'check') return 3 * 86400000;
+  if (mode === '3m') return 40 * 86400000;
+  if (mode === '1y') return 75 * 86400000;
+  return 21 * 86400000; // vs previous month
+}
+
 /**
- * PEA / Livret / PEE change vs the same hero comparison baseline.
- * Uses reconstructed wealth history (contributions × multiple, livret statements).
+ * Nearest series value for `key` ('pea'|'livret') around atMs.
+ * Returns null when the closest observation is too far — avoids fake
+ * “Livret −€1.5k this month” from a 2024 PDF statement.
+ */
+function accountValueNear(atMs, key, maxSlackMs) {
+  let best = null;
+  let bestDist = Infinity;
+  wealthHistorySeries().forEach(r => {
+    const v = r[key];
+    if (v == null || !isFinite(v)) return;
+    // Ignore today's live point when asking for a past baseline.
+    const src = r.source || '';
+    if (src === 'live' && Math.abs(+r.date - Date.now()) < 36e5) return;
+    const dist = Math.abs(+r.date - atMs);
+    if (dist < bestDist) {
+      best = v;
+      bestDist = dist;
+    }
+  });
+  if (best == null || bestDist > maxSlackMs) return null;
+  return best;
+}
+
+/**
+ * PEA / Livret / PEE change vs the same hero comparison window.
+ * Only shown when we have a reading near that baseline (not “last known ever”).
  */
 function computeHeroAccountDeltas() {
   const base = heroCompareBaseline(heroVsMode);
   if (!base || !(base.at > 0)) return { pea: null, livret: null, pee: null, baseline: null };
-  const at = base.at;
-  let peaThen = null;
-  let livretThen = null;
-  wealthHistorySeries().forEach(r => {
-    if (+r.date > at) return;
-    if (r.pea != null) peaThen = r.pea;
-    if (r.livret != null) livretThen = r.livret;
-  });
-  const peaNow = STATE.pea || 0;
-  const livretNow = STATE.livretA || 0;
-  // PEE is manual / rarely time-series — only show a delta if we somehow had a prior NW log proxy.
+  const slack = heroAccountSlackMs(heroVsMode);
+  const peaThen = accountValueNear(base.at, 'pea', slack);
+  const livretThen = accountValueNear(base.at, 'livret', slack);
   return {
-    pea: peaThen != null ? Math.round(peaNow - peaThen) : null,
-    livret: livretThen != null ? Math.round(livretNow - livretThen) : null,
+    pea: peaThen != null ? Math.round((STATE.pea || 0) - peaThen) : null,
+    livret: livretThen != null ? Math.round((STATE.livretA || 0) - livretThen) : null,
     pee: null,
     baseline: base,
   };
