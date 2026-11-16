@@ -172,7 +172,7 @@ body:not(.locked) #unlock-overlay{display:none!important}
 .hero-delta .hero-arrow{font-size:1.05em;line-height:1}
 .hero-delta.flat{color:var(--muted)}
 .hero-perf-row{
-  display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;
+  display:flex;flex-wrap:wrap;align-items:flex-end;
   gap:12px 18px;margin:8px 0 16px;
 }
 .hero-perf{
@@ -180,13 +180,17 @@ body:not(.locked) #unlock-overlay{display:none!important}
   margin:0;padding:0;
 }
 .hero-perf[hidden]{display:none!important}
-.hero-perf-row .btn{padding:8px 12px;font-size:11px;flex-shrink:0}
-.perf-history{
+.hero-perf-fold{
   position:relative;z-index:1;
-  margin:8px 0 0;padding-top:16px;
+  margin:16px 0 0;padding-top:16px;
   border-top:1px solid rgba(126,160,211,0.16);
 }
-.perf-history[hidden]{display:none!important}
+.hero-perf-fold .section-head h2{font-size:clamp(18px,3vw,22px);color:#fff}
+.hero-perf-fold .section-head p{color:rgba(238,243,248,.62);font-size:12px}
+.hero-perf-fold .fold-tog{
+  background:rgba(7,13,22,0.35);
+  border-color:rgba(126,160,211,0.22);
+}
 .perf-history .chart-wrap{height:260px;background:rgba(7,13,22,0.28);border-color:rgba(126,160,211,0.16)}
 .chart-toolbar{
   display:grid;
@@ -552,7 +556,6 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
               <strong class="blur-val flat" id="hero-perf-markets">—</strong>
             </div>
           </div>
-          <button type="button" class="btn" id="perf-hist-btn" onclick="togglePerfHistory()">Last 12 months</button>
         </div>
         <div class="hero-split" id="hero-split"></div>
         <div class="hero-cta">
@@ -570,42 +573,51 @@ body.anon .boost-card strong,body.anon .inc-chip strong,body.anon .budget-row,bo
         </div>
       </aside>
     </div>
-    <div class="perf-history" id="perf-history">
-      <div class="chart-toolbar">
-        <div class="chart-toolbar-left">
-          <div class="chart-pane-tabs" role="tablist" aria-label="Period or cumulative">
-            <button type="button" class="on" data-perf-cum="period" onclick="setPerfHistCum('period')">Per period</button>
-            <button type="button" data-perf-cum="cumulative" onclick="setPerfHistCum('cumulative')">Cumulative</button>
-          </div>
-        </div>
-        <div class="chart-toolbar-mid">
-          <div class="chart-pane-tabs" role="tablist" aria-label="Performance history">
-            <button type="button" class="on" data-perf-hist="overall" onclick="setPerfHistTab('overall')">Overall</button>
-            <button type="button" data-perf-hist="you" onclick="setPerfHistTab('you')">You</button>
-            <button type="button" data-perf-hist="markets" onclick="setPerfHistTab('markets')">Markets</button>
-          </div>
-        </div>
-        <div class="chart-toolbar-right">
-          <div class="range-row" role="group" aria-label="History lookback" id="perf-hist-lookback">
-            <button type="button" data-perf-lb="6m" onclick="setPerfHistLookback('6m')">6M</button>
-            <button type="button" class="on" data-perf-lb="1y" onclick="setPerfHistLookback('1y')">1Y</button>
-            <button type="button" data-perf-lb="2y" onclick="setPerfHistLookback('2y')">2Y</button>
-            <button type="button" data-perf-lb="3y" onclick="setPerfHistLookback('3y')">3Y</button>
-            <button type="button" data-perf-lb="5y" onclick="setPerfHistLookback('5y')">5Y</button>
-            <button type="button" data-perf-lb="max" onclick="setPerfHistLookback('max')">Max</button>
-          </div>
+    <div class="fold on hero-perf-fold" data-fold="hero-perf" id="perf-history">
+      <div class="fold-head">
+        <button type="button" class="fold-tog" aria-label="Collapse section" aria-expanded="true" onclick="toggleFold('hero-perf')">▼</button>
+        <div class="section-head">
+          <h2>Performance history</h2>
+          <p>Overall, you, and markets — per period or cumulative.</p>
         </div>
       </div>
-      <div class="perf-hist-avg" id="perf-hist-avg" hidden>
-        <span id="perf-hist-avg-lbl">Avg / bin</span>
-        <strong class="blur-val" id="perf-hist-avg-val">—</strong>
-        <span id="perf-hist-total-wrap" hidden>
-          <span>Total</span>
-          <strong class="blur-val" id="perf-hist-total-val">—</strong>
-        </span>
+      <div class="fold-body perf-history">
+        <div class="chart-toolbar">
+          <div class="chart-toolbar-left">
+            <div class="chart-pane-tabs" role="tablist" aria-label="Period or cumulative">
+              <button type="button" class="on" data-perf-cum="period" onclick="setPerfHistCum('period')">Per period</button>
+              <button type="button" data-perf-cum="cumulative" onclick="setPerfHistCum('cumulative')">Cumulative</button>
+            </div>
+          </div>
+          <div class="chart-toolbar-mid">
+            <div class="chart-pane-tabs" role="tablist" aria-label="Performance history">
+              <button type="button" class="on" data-perf-hist="overall" onclick="setPerfHistTab('overall')">Overall</button>
+              <button type="button" data-perf-hist="you" onclick="setPerfHistTab('you')">You</button>
+              <button type="button" data-perf-hist="markets" onclick="setPerfHistTab('markets')">Markets</button>
+            </div>
+          </div>
+          <div class="chart-toolbar-right">
+            <div class="range-row" role="group" aria-label="History lookback" id="perf-hist-lookback">
+              <button type="button" data-perf-lb="6m" onclick="setPerfHistLookback('6m')">6M</button>
+              <button type="button" class="on" data-perf-lb="1y" onclick="setPerfHistLookback('1y')">1Y</button>
+              <button type="button" data-perf-lb="2y" onclick="setPerfHistLookback('2y')">2Y</button>
+              <button type="button" data-perf-lb="3y" onclick="setPerfHistLookback('3y')">3Y</button>
+              <button type="button" data-perf-lb="5y" onclick="setPerfHistLookback('5y')">5Y</button>
+              <button type="button" data-perf-lb="max" onclick="setPerfHistLookback('max')">Max</button>
+            </div>
+          </div>
+        </div>
+        <div class="perf-hist-avg" id="perf-hist-avg" hidden>
+          <span id="perf-hist-avg-lbl">Avg / bin</span>
+          <strong class="blur-val" id="perf-hist-avg-val">—</strong>
+          <span id="perf-hist-total-wrap" hidden>
+            <span>Total</span>
+            <strong class="blur-val" id="perf-hist-total-val">—</strong>
+          </span>
+        </div>
+        <div class="chart-wrap"><canvas id="perfHistChart"></canvas></div>
+        <p class="traj-note" id="perf-hist-note"></p>
       </div>
-      <div class="chart-wrap"><canvas id="perfHistChart"></canvas></div>
-      <p class="traj-note" id="perf-hist-note"></p>
     </div>
   </section>
 
@@ -1173,8 +1185,8 @@ function mountDashboard() {
     const lbl = document.getElementById('anon-lbl');
     if (lbl) lbl.textContent = anonMode ? 'Anon ON' : 'Anon';
   }
+  migratePerfHistFoldPref();
   syncFolds();
-  syncPerfHistButton();
   syncPerfHistLookbackUI();
 }
 
@@ -1860,9 +1872,7 @@ function onHeroVsChange() {
   // Hero comparison window is part of the check-in dossier — drop stale cache and nudge refresh.
   clearAiCache();
   setCheckinStatus('Comparison window changed — tap Refresh check-in for an updated read', 'warn');
-  syncPerfHistButton();
-  const hist = document.getElementById('perf-history');
-  if (hist && !hist.hidden) drawPerfHistory();
+  if (isFoldOpen('hero-perf')) drawPerfHistory();
 }
 
 /** Section collapse — triangle rotates; body hides. Persisted per id. */
@@ -1903,6 +1913,7 @@ function toggleFold(id) {
         if (chartPaneMode.livret === 'future') drawLivretProjection();
         else drawLivretChart();
       }
+      if (id === 'hero-perf') drawPerfHistory();
     });
   }
 }
@@ -1921,7 +1932,17 @@ let perfHistLookback = PERF_HIST_LOOKBACKS.some(x => x.id === localStorage.getIt
   ? localStorage.getItem('dashboard_perf_hist_lb')
   : '1y';
 // Default open; only stay closed if the user explicitly hid it.
-let perfHistoryOpen = localStorage.getItem('dashboard_perf_hist_open') !== '0';
+/** One-time: old show/hide button pref → fold triangle. */
+function migratePerfHistFoldPref() {
+  try {
+    const legacy = localStorage.getItem('dashboard_perf_hist_open');
+    if (legacy == null) return;
+    if (localStorage.getItem('dashboard_fold_hero-perf') == null) {
+      localStorage.setItem('dashboard_fold_hero-perf', legacy === '0' ? '0' : '1');
+    }
+    localStorage.removeItem('dashboard_perf_hist_open');
+  } catch (_) {}
+}
 
 function perfHistMonthsPerBin() {
   // Bin width still follows the hero “vs” window so the story matches the KPI.
@@ -1961,16 +1982,8 @@ function perfHistorySpec() {
     bins,
     lookbackId: lb.id,
     lookbackLabel: lb.label,
-    btn: lb.id === 'max' ? 'All history' : `Last ${lb.label}`,
     note: `${binNote} Lookback ${lb.label}.`,
   };
-}
-
-function syncPerfHistButton() {
-  const btn = document.getElementById('perf-hist-btn');
-  if (!btn) return;
-  const spec = perfHistorySpec();
-  btn.textContent = (perfHistoryOpen ? 'Hide · ' : '') + spec.btn;
 }
 
 function syncPerfHistLookbackUI() {
@@ -1984,7 +1997,6 @@ function setPerfHistLookback(id) {
   perfHistLookback = id;
   try { localStorage.setItem('dashboard_perf_hist_lb', id); } catch (_) {}
   syncPerfHistLookbackUI();
-  syncPerfHistButton();
   drawPerfHistory();
 }
 
@@ -2037,15 +2049,6 @@ function buildPerfHistoryBins(txs) {
     cursor = new Date(cursor.getFullYear(), cursor.getMonth() - spec.monthsPerBin, 1);
   }
   return { spec, bins: bins.reverse() };
-}
-
-function togglePerfHistory() {
-  perfHistoryOpen = !perfHistoryOpen;
-  try { localStorage.setItem('dashboard_perf_hist_open', perfHistoryOpen ? '1' : '0'); } catch (_) {}
-  const el = document.getElementById('perf-history');
-  if (el) el.hidden = !perfHistoryOpen;
-  syncPerfHistButton();
-  if (perfHistoryOpen) drawPerfHistory();
 }
 
 function setPerfHistTab(tab) {
@@ -2372,12 +2375,7 @@ function renderHero() {
   setTabBoost('spend-tab-boost', boosts.spend);
   setTabBoost('staging-tab-boost', boosts.staging);
 
-  syncPerfHistButton();
-  const hist = document.getElementById('perf-history');
-  if (hist) {
-    hist.hidden = !perfHistoryOpen;
-    if (perfHistoryOpen) drawPerfHistory();
-  }
+  if (isFoldOpen('hero-perf')) drawPerfHistory();
 }
 
 function monthBucket(txs) {
