@@ -30,7 +30,8 @@ When Apps Script is missing or you want a full rebuild without the browser:
 # 3) PDF history (optional)
 python3 tools/parse_history.py          # → data/history.json (gitignored)
 FINARY_JSON=/tmp/finary-balances.raw.json python3 tools/sync_dashboard.py
-# → data/wallet-snapshot.json + encrypted .enc
+# → data/wallet-snapshot.json (local only)
+python3 scripts/seal_vault.py   # paste Bitwarden passphrase in terminal (hidden)
 git add data/wallet-snapshot.enc && git commit && git push   # Pages cold-start vault
 ```
 

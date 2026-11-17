@@ -5,7 +5,7 @@ Rebuild data/wallet-snapshot.json from:
   - Finary balances (FINARY_JSON or /tmp/finary-balances.json)
   - PDF history (data/history.json from parse_history.py)
 
-Then encrypt with tools/encrypt-snapshot.mjs if .dashboard-pass exists.
+Then seal the vault interactively: python3 scripts/seal_vault.py (getpass; no pass on disk).
 """
 from __future__ import annotations
 
@@ -287,13 +287,12 @@ def main() -> None:
         balances.get("costBasisFromPdf"),
     )
 
-    # Encrypt if passphrase available
-    enc = ROOT / "tools" / "encrypt-snapshot.mjs"
-    if enc.exists() and (ROOT / ".dashboard-pass").exists():
-        subprocess.check_call(["node", str(enc)], cwd=str(ROOT))
-        print("Encrypted vault updated")
+    seal = ROOT / "scripts" / "seal_vault.py"
+    if seal.exists():
+        print("Plaintext snapshot ready. Seal with a Bitwarden passphrase (hidden prompt):")
+        print(f"  python3 {seal}")
     else:
-        print("Skip encrypt (no .dashboard-pass or encrypt script)")
+        print("Skip seal (scripts/seal_vault.py missing)")
 
 
 if __name__ == "__main__":
