@@ -1398,7 +1398,12 @@ async function submitUnlock() {
     console.warn(e);
     vaultUnlocked = false;
     setLockedUI(true);
-    if (err) err.textContent = 'Wrong passphrase or corrupted vault file';
+    // Stale “Remember this device” after a reseal is a common false failure.
+    try { localStorage.removeItem(LS_VAULT_PASS); } catch (_) {}
+    if (err) {
+      err.textContent =
+        'Wrong passphrase or outdated vault. Hard-refresh the page, uncheck Remember if needed, and use the Bitwarden passphrase from your latest seal.';
+    }
   }
   if (btn) { btn.disabled = false; btn.textContent = 'Unlock'; }
 }

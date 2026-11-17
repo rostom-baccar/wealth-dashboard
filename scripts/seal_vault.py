@@ -74,7 +74,43 @@ def encrypt(passphrase: str, plaintext: bytes) -> dict:
     }
 
 
+def decrypt_bundle(bundle: dict, passphrase: str) -> bytes:
+    salt = base64.b64decode(bundle["salt"])
+    iv = base64.b64decode(bundle["iv"])
+    tag = base64.b64decode(bundle["tag"])
+    ct = base64.b64decode(bundle["ct"])
+    key = derive_key(passphrase, salt)
+    return AESGCM(key).decrypt(iv, ct + tag, None)
+
+
 def main() -> int:
+    verify = "--verify" in sys.argv
+
+    if verify:
+        if not ENC_PATH.exists():
+            print(f"Missing {ENC_PATH}", file=sys.stderr)
+            return 1
+        print("Verify sealed vault (input hidden; not saved).\n")
+        p = getpass.getpass("Passphrase: ")
+        if not p:
+            print("Empty passphrase — aborting.", file=sys.stderr)
+            return 1
+        try:
+            bundle = json.loads(ENC_PATH.read_text())
+            text = decrypt_bundle(bundle, p)
+            del p
+            data = json.loads(text.decode("utf-8"))
+        except Exception:
+            print("FAIL — wrong passphrase or corrupted vault file.", file=sys.stderr)
+            return 1
+        print(
+            "OK — decrypted",
+            len(data.get("transactions") or []),
+            "txs · livretA=",
+            (data.get("balances") or {}).get("livretA"),
+        )
+        return 0
+
     if not DATA_PATH.exists():
         print(f"Missing {DATA_PATH}", file=sys.stderr)
         print("Sync/export plaintext locally first (tools/sync_dashboard.py).", file=sys.stderr)
@@ -100,6 +136,12 @@ def main() -> int:
         return 1
 
     payload = encrypt(p1, plain)
+    # Local verify before writing
+    try:
+        decrypt_bundle(payload, p1)
+    except Exception as e:
+        print(f"Internal seal verify failed: {e}", file=sys.stderr)
+        return 1
     del p1, p2
 
     ENC_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -110,7 +152,7 @@ def main() -> int:
     print(f"  transactions: {n_tx}")
     print(f"  wrote: {ENC_PATH}")
     print("\nNext: tell Cursor «sealed» (do NOT paste the passphrase).")
-    print("Then unlock the live site with the same Bitwarden passphrase.")
+    print("Then hard-refresh the live site and unlock with that Bitwarden passphrase.")
     return 0
 
 
