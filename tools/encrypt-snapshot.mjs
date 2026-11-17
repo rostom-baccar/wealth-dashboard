@@ -2,17 +2,21 @@
 /**
  * Encrypt data/wallet-snapshot.json → data/wallet-snapshot.enc
  *
- * Usage:
- *   DASHBOARD_PASS='your-pass' node tools/encrypt-snapshot.mjs
- *   # or put the pass in .dashboard-pass (gitignored)
+ * Passphrase sources (never logged):
+ *   1. DASHBOARD_PASS env
+ *   2. .dashboard-pass (gitignored) — preferred with Bitwarden:
+ *        ./tools/bitwarden-pass.sh
+ *   3. Bitwarden CLI if BITWARDEN_ITEM is set and `bw` is available
  *
- * Decrypt check:
- *   DASHBOARD_PASS='…' node tools/encrypt-snapshot.mjs --verify
+ * Usage:
+ *   node tools/encrypt-snapshot.mjs
+ *   node tools/encrypt-snapshot.mjs --verify
  */
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { randomBytes, pbkdf2Sync, createCipheriv, createDecipheriv } from 'crypto';
+import { execFileSync } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
@@ -22,10 +26,30 @@ const passFile = resolve(root, '.dashboard-pass');
 
 const ITER = 250_000;
 
+function passFromBitwarden() {
+  const item = (process.env.BITWARDEN_ITEM || '').trim();
+  if (!item) return null;
+  try {
+    const out = execFileSync('bw', ['get', 'password', item], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: process.env,
+    });
+    const p = out.trim();
+    return p || null;
+  } catch {
+    return null;
+  }
+}
+
 function getPass() {
   if (process.env.DASHBOARD_PASS) return process.env.DASHBOARD_PASS.trim();
   if (existsSync(passFile)) return readFileSync(passFile, 'utf8').trim();
-  throw new Error('Set DASHBOARD_PASS or create .dashboard-pass');
+  const fromBw = passFromBitwarden();
+  if (fromBw) return fromBw;
+  throw new Error(
+    'No passphrase. Run ./tools/bitwarden-pass.sh (or set .dashboard-pass / DASHBOARD_PASS).'
+  );
 }
 
 function encrypt(plainUtf8, pass) {

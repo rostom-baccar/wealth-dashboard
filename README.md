@@ -19,12 +19,32 @@ The HTML is public. **Your numbers are not** — they ship as an AES-256-GCM enc
 
 Other people opening the site see only the unlock screen — the app UI is not rendered until unlock succeeds. Fetching `.enc` without the passphrase yields unreadable data.
 
+### Passphrase via Bitwarden (never paste into Cursor chat)
+
+Repo stays public; the passphrase never belongs in git or in chat.
+
+1. In the **Bitwarden app**: Generator → long passphrase → save as a Login named **`Rostom Dashboard Vault`** (password field = vault passphrase).
+2. Locally (Terminal, not chat):
+
+```bash
+brew install bitwarden-cli   # once
+bw login                    # once
+chmod +x tools/bitwarden-pass.sh
+./tools/bitwarden-pass.sh   # writes gitignored .dashboard-pass (does not print the secret)
+node tools/encrypt-snapshot.mjs
+git add data/wallet-snapshot.enc && git commit -m "Refresh encrypted snapshot" && git push
+```
+
+3. On the site: unlock by copying the passphrase **from Bitwarden** into the unlock field (or use Remember this device).
+
+Optional: `BITWARDEN_ITEM="Other name" ./tools/bitwarden-pass.sh`
+
 ### Re-encrypt after syncing new data
 
 ```bash
 # plaintext lives locally only
-# edit/sync → data/wallet-snapshot.json
-DASHBOARD_PASS="$(cat .dashboard-pass)" node tools/encrypt-snapshot.mjs
+./tools/bitwarden-pass.sh          # or reuse existing .dashboard-pass
+node tools/encrypt-snapshot.mjs
 git add data/wallet-snapshot.enc && git commit -m "Refresh encrypted snapshot" && git push
 ```
 
@@ -33,6 +53,7 @@ git add data/wallet-snapshot.enc && git commit -m "Refresh encrypted snapshot" &
 - **Git history** may still contain older plaintext commits from before encryption — treat the passphrase as rotating privacy going forward; rewrite history only if you need to scrub the past.
 - An Apps Script `/exec` URL that returns plaintext is also a secret — don’t publish it.
 - Anon mode only blurs the UI; encryption is what protects the network download.
+- Never paste the vault passphrase into Cursor chat; agents can encrypt using `.dashboard-pass` without reading it aloud.
 
 ## Architecture
 
