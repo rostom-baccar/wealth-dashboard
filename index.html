@@ -1483,7 +1483,10 @@ function saveBalancesFromModal() {
   const exportUrl = (document.getElementById('modal-export-url')?.value || '').trim();
   const prevGemini = (localStorage.getItem(LS_GEMINI) || '').trim();
   const prevFp = checkinDataFingerprint();
-  if (gemini !== prevGemini) clearAiCache();
+  if (gemini !== prevGemini) {
+    clearAiCache();
+    clearGeminiCooldown();
+  }
   if (gemini) localStorage.setItem(LS_GEMINI, gemini);
   else localStorage.removeItem(LS_GEMINI);
   if (exportUrl) localStorage.setItem(LS_EXPORT_URL, exportUrl);
@@ -3770,11 +3773,35 @@ function isGeminiFatalError(err) {
   return false;
 }
 
+/** Parse Gemini “retry in 32s / 1.5m / 2h” hints; fall back to default cooldown. */
+function geminiRetryDelayMs(err) {
+  const msg = String((err && err.message) || '');
+  const m = msg.match(/retry\s+in\s+(\d+(?:\.\d+)?)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hour|hours)\b/i);
+  if (m) {
+    const n = parseFloat(m[1]);
+    const unit = m[2].toLowerCase();
+    if (unit.startsWith('h')) return Math.ceil(n * 3600000);
+    if (unit.startsWith('m')) return Math.ceil(n * 60000);
+    return Math.ceil(n * 1000);
+  }
+  // Free-tier daily exhaustion often has no short retry — wait longer than a rate-limit blip.
+  if (/daily|per\s*day|free[_ ]?tier|GenerateRequestsPerDay/i.test(msg)) {
+    return Math.max(GEMINI_QUOTA_COOLDOWN_MS, 3 * 60 * 60 * 1000);
+  }
+  return GEMINI_QUOTA_COOLDOWN_MS;
+}
+
+function geminiQuotaStatusLabel(err) {
+  const msg = String((err && err.message) || '').replace(/\s+/g, ' ').trim();
+  const short = msg.length > 90 ? msg.slice(0, 87) + '…' : msg;
+  return short || 'Gemini quota / rate limit';
+}
+
 function getGeminiCooldownUntil() {
   try { return +localStorage.getItem(LS_GEMINI_COOLDOWN) || 0; } catch { return 0; }
 }
 function setGeminiCooldown(ms = GEMINI_QUOTA_COOLDOWN_MS) {
-  try { localStorage.setItem(LS_GEMINI_COOLDOWN, String(Date.now() + ms)); } catch (_) {}
+  try { localStorage.setItem(LS_GEMINI_COOLDOWN, String(Date.now() + Math.max(60_000, ms))); } catch (_) {}
 }
 function clearGeminiCooldown() {
   try { localStorage.removeItem(LS_GEMINI_COOLDOWN); } catch (_) {}
@@ -4285,8 +4312,8 @@ async function generateAiSummary(txs, force = false) {
     setCheckinStatus('Calling Gemini…', 'warn', digest);
 
     let result = null;
-    // Prefer grounded search; fall back across models, then plain generation.
-    outer: for (const withSearch of [true, false]) {
+    // Prefer plain generation first (cheaper / less quota); then grounded search.
+    outer: for (const withSearch of [false, true]) {
       for (const model of GEMINI_CHECKIN_MODELS) {
         if (!stillCurrent()) break outer;
         try {
@@ -4311,7 +4338,7 @@ async function generateAiSummary(txs, force = false) {
       el.innerHTML = renderAiHtml(result.text);
       setAiCache(result.text, { source: 'ai' });
       setCheckinStatus(
-        result.grounded ? `Live · ${result.model}` : `Live · ${result.model}`,
+        result.grounded ? `Live · ${result.model} · grounded` : `Live · ${result.model}`,
         'ok',
         digest
       );
@@ -4319,8 +4346,13 @@ async function generateAiSummary(txs, force = false) {
   } catch (e) {
     console.warn('Gemini check-in failed:', e.message, errors);
     if (isGeminiQuotaError(e)) {
-      setGeminiCooldown();
+      setGeminiCooldown(geminiRetryDelayMs(e));
       finishLocal(`Quota · ~${geminiCooldownRemainingMin()}m`, 'quota');
+      setCheckinStatus(
+        `Quota · ~${geminiCooldownRemainingMin()}m`,
+        'bad',
+        geminiQuotaStatusLabel(e)
+      );
     } else {
       finishLocal('AI failed · offline', 'offline');
     }
@@ -4334,6 +4366,9 @@ async function generateAiSummary(txs, force = false) {
 
 async function forceAiRefresh() {
   if (!vaultUnlocked) { showUnlockModal(); return; }
+  // Force always hits the API — drop any local latch so we can see a live result or a fresh Google error.
+  clearGeminiCooldown();
+  clearAiCache();
   await generateAiSummary(STATE.transactions, true);
 }
 
@@ -4540,8 +4575,13 @@ async function generateSpendAiSummary(txs, force = false) {
   } catch (e) {
     console.warn('Spend AI failed:', e.message);
     if (isGeminiQuotaError(e)) {
-      setGeminiCooldown();
+      setGeminiCooldown(geminiRetryDelayMs(e));
       finishLocal(`Quota · ~${geminiCooldownRemainingMin()}m`, 'quota');
+      setSpendAiStatus(
+        `Quota · ~${geminiCooldownRemainingMin()}m`,
+        'bad',
+        geminiQuotaStatusLabel(e)
+      );
     } else {
       finishLocal('AI failed · offline', 'offline');
     }
@@ -4555,6 +4595,7 @@ async function generateSpendAiSummary(txs, force = false) {
 
 async function forceSpendAiRefresh() {
   if (!vaultUnlocked) { showUnlockModal(); return; }
+  clearGeminiCooldown();
   clearSpendAiCache();
   await generateSpendAiSummary(STATE.transactions, true);
 }
