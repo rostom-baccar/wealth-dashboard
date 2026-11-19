@@ -1,50 +1,48 @@
 # Live Refresh (required)
 
-The **Refresh** button rebuilds data from Drive via Apps Script. It does **not** use the static encrypted vault for live updates.
+The **Refresh** button rebuilds **spend + staging + Finary** from Drive via Apps Script. It does **not** use the static encrypted vault for live updates.
 
 ## One-time setup
 
 1. Open the Google Sheet → **Extensions → Apps Script**.
 2. Paste the latest [`WalletExport.gs`](./WalletExport.gs) → Save.
-3. **Deploy → New deployment → Web app**
+3. **Deploy → New deployment → Web app** (or **Manage deployments → Edit → New version** after each `.gs` change)
    - Execute as: **Me**
    - Who has access: **Anyone**
 4. Copy the `/exec` URL.
 5. Unlock the dashboard → **⚙️ Settings** → paste into **Apps Script web app URL** → Save.
 
-## What Refresh does (one click — no Cursor required)
+## What Refresh does (one click)
 
-1. Calls the web app with `full=1` (JSONP).
-2. Apps Script reads Drive `wallet-database` (SQLite), rebuilds **transactions + budgets**, merges `finary-balances.json`, writes `wallet-snapshot.json`.
-3. Returns the full snapshot to the browser → dashboard updates (Spend budgets, PEA, Livret, etc.).
+1. Calls the web app with `full=1&fresh=1` (JSONP, cache-busted).
+2. Apps Script picks the **newest** Drive `wallet-database` (trashes older duplicates), rebuilds **Spend** transactions + budgets.
+3. Extracts **Staging** (Savings → Bourso LDDS) from that same SQLite.
+4. Merges Drive `finary-balances.json` for **PEA / Livret / allocation**, then overlays staging so Finary cannot wipe LDDS.
+5. Returns the full snapshot → dashboard replaces live state (no stale localStorage leftover).
 
-The browser **cannot** log into Finary. Refresh uses whatever balances are already in Drive’s `finary-balances.json`. Keep that file reasonably fresh (Cursor sync, or a scheduled automation later). Wallet + budgets only need the sqlite on Drive + this Refresh.
+Status pills after Refresh show ages for Spend / Staging / Finary.
 
-## Cursor sync path (Phase 1 alternative)
+## Finary freshness
 
-When Apps Script is missing or you want a full rebuild without the browser:
+The browser **cannot** log into Finary. Refresh uses Drive’s `finary-balances.json`.
+
+To refresh PEA / Livret numbers: ask Cursor to **sync Finary**, then click **Refresh**.
+
+If the Finary pill says **stale** (>36h), balances are still shown but need a Cursor sync.
+
+## Cursor sync path (vault / full rebuild)
 
 ```bash
-# 1) Cursor writes live Finary → /tmp/finary-balances.raw.json (and updates Drive)
-# 2) Wallet sqlite at /tmp/wallet-database-live.sqlite (from Drive)
-# 3) PDF history (optional)
-python3 tools/parse_history.py          # → data/history.json (gitignored)
-FINARY_JSON=/tmp/finary-balances.raw.json python3 tools/sync_dashboard.py
-# → data/wallet-snapshot.json (local only)
-python3 scripts/seal_vault.py   # paste Bitwarden passphrase in terminal (hidden)
-git add data/wallet-snapshot.enc && git commit && git push   # Pages cold-start vault
+# 1) Cursor writes live Finary → Drive finary-balances.json (+ /tmp)
+# 2) Newest wallet sqlite at /tmp/wallet-database-live.sqlite
+python3 tools/parse_history.py          # optional PDFs → data/history.json
+FINARY_JSON=/tmp/finary-balances.json python3 tools/sync_dashboard.py
+python3 scripts/seal_vault.py           # Bitwarden passphrase (hidden)
+git add data/wallet-snapshot.enc && git commit && git push
 ```
 
 Ask Cursor: **“sync Finary / rebuild vault”**.
 
-## Finary
-
-Apps Script cannot log into Finary. It merges whatever is in Drive `finary-balances.json`.
-
-To refresh PEA / Livret A: ask Cursor to **sync Finary balances**, then click **Refresh** (or wait until that file was updated, then Refresh).
-
-PDF history (Livret / PEA versements / PEE) is merged into balances by `sync_dashboard.py` and written into Drive `finary-balances.json` so Refresh picks it up too.
-
 ## Encrypted vault (GitHub Pages)
 
-`data/wallet-snapshot.enc` is for cold start after unlock. Live Refresh bypasses it once the web app URL is set. After a Cursor sync + push, hard-refresh the site and unlock to load the new vault without Apps Script.
+`data/wallet-snapshot.enc` is cold start after unlock. Live Refresh bypasses it once the web app URL is set.

@@ -11,6 +11,9 @@ const TAB_GID          = 450720486;
 const JSON_FILE_NAME     = 'wallet-snapshot.json'; // written alongside wallet-database
 const BALANCES_FILE_NAME = 'finary-balances.json'; // optional; merged into snapshot if present
 
+/** Set by readSQLiteFromDrive — which Money Manager DB file was used. */
+var LAST_WALLET_META_ = null;
+
 // ================================================================
 // ENTRY POINT — manual only (menu, runNow, or optional web app)
 // ================================================================
@@ -18,7 +21,8 @@ function exportWalletToSheet() {
   try {
     Logger.log('Starting wallet export...');
     const bytes = readSQLiteFromDrive();
-    Logger.log('Read ' + bytes.length + ' bytes');
+    Logger.log('Read ' + bytes.length + ' bytes'
+      + (LAST_WALLET_META_ ? (' from ' + LAST_WALLET_META_.fileId + ' @ ' + LAST_WALLET_META_.updatedAt) : ''));
     const db = parseSQLite(bytes);
     Logger.log('Tables: ' + Object.keys(db).join(', '));
 
@@ -26,6 +30,8 @@ function exportWalletToSheet() {
     const categories = {};
     (db['category'] || []).forEach(c => {
       categories[c.id] = { name: c.name || '', type: c.type };
+      categories[String(c.id)] = categories[c.id];
+      if (!isNaN(+c.id)) categories[+c.id] = categories[c.id];
     });
     const wallets = buildLookup(db['wallet'] || [], 'id', 'name');
     const spendAccountId = resolveSpendAccountId_(db['account'] || []);
@@ -34,22 +40,23 @@ function exportWalletToSheet() {
     // Savings profile (PEA/Livret staging) is read separately into balances.
     const trans = (db['trans'] || [])
       .filter(t => {
-        if (spendAccountId != null && t['account_id'] !== spendAccountId) return false;
-        if (t['type'] === 2) return false; // transfer
-        const cat = categories[t['category_id']];
+        // Coerce ids — Apps Script SQLite parser may yield strings.
+        if (spendAccountId != null && +t['account_id'] !== +spendAccountId) return false;
+        if (+t['type'] === 2) return false; // transfer
+        const cat = categories[t['category_id']] || categories[+t['category_id']];
         const name = (cat && cat.name) || '';
         // Keep blank-named categories (salary lives here). Only drop progress-bar noise.
         return name !== 'Month progress bar' && name !== 'Month progress bar compensation';
       })
-      .sort((a, b) => (b['date_time'] || 0) - (a['date_time'] || 0))
+      .sort((a, b) => (+b['date_time'] || 0) - (+a['date_time'] || 0))
       .map(t => {
-        const epochMs  = t['date_time'] || 0;
+        const epochMs  = +t['date_time'] || 0;
         const date     = new Date(epochMs);
         const dateStr  = Utilities.formatDate(date, 'Europe/Paris', 'MM/dd/yyyy, HH:mm');
-        const amount   = (t['amount'] || 0) / 100.0;
-        const cat      = categories[t['category_id']] || {};
+        const amount   = (+t['amount'] || 0) / 100.0;
+        const cat      = categories[t['category_id']] || categories[+t['category_id']] || {};
         // Prefer amount sign; fall back to category.type (1=income)
-        const type     = amount > 0 || cat.type === 1 ? 'Income' : 'Expense';
+        const type     = amount > 0 || +cat.type === 1 ? 'Income' : 'Expense';
         // Blank income category names are usually salary in this app
         let category   = cat.name || '';
         if (!category) {
@@ -58,7 +65,7 @@ function exportWalletToSheet() {
             ? 'Salary'
             : (type === 'Income' ? 'Income' : 'Expense');
         }
-        const wallet   = wallets[t['wallet_id']] || '';
+        const wallet   = wallets[t['wallet_id']] || wallets[+t['wallet_id']] || '';
         const memo     = t['note'] || '';
         return [dateStr, type, category, amount, 'EUR', memo, wallet];
       });
@@ -144,13 +151,15 @@ function buildBudgetsFromDb_(db, categories, spendAccountId) {
   });
   const out = [];
   (db['budget'] || []).forEach(b => {
-    if (spendAccountId != null && b['account_id'] != null && b['account_id'] !== spendAccountId) return;
+    if (spendAccountId != null && b['account_id'] != null && +b['account_id'] !== +spendAccountId) return;
     const name = String(b.name || '').trim();
     if (skip[name] || name.toLowerCase().indexOf('month progress') === 0) return;
     const catNames = [];
     const seen = {};
-    (linksByBudget[b.id] || []).forEach(cid => {
-      const cn = (categories[cid] && categories[cid].name) || '';
+    (linksByBudget[b.id] || linksByBudget[String(b.id)] || []).forEach(cid => {
+      const cn = (categories[cid] && categories[cid].name)
+        || (categories[+cid] && categories[+cid].name)
+        || '';
       if (cn && !skip[cn] && !seen[cn]) {
         seen[cn] = 1;
         catNames.push(cn);
@@ -159,7 +168,7 @@ function buildBudgetsFromDb_(db, categories, spendAccountId) {
     out.push({
       id: b.id,
       name: name || ('Budget ' + b.id),
-      amount: (b.amount || 0) / 100.0,
+      amount: (+b.amount || 0) / 100.0,
       period: b.period,
       categories: catNames,
     });
@@ -169,6 +178,7 @@ function buildBudgetsFromDb_(db, categories, spendAccountId) {
 
 function writeJsonSnapshot(rows, budgets, savings) {
   const folder = DriveApp.getFolderById(SQLITE_FOLDER_ID);
+  const prev = readExistingSnapshot_(folder);
 
   const snapshot = {
     lastSync: new Date().toISOString(),
@@ -189,21 +199,48 @@ function writeJsonSnapshot(rows, budgets, savings) {
   if (balances) {
     snapshot.balances = balances;
     Logger.log('Merged balances from ' + BALANCES_FILE_NAME);
-  } else {
+  } else if (prev && prev.balances) {
     // Preserve previous snapshot.balances when rewriting in place
-    const prev = readExistingSnapshot_(folder);
-    if (prev && prev.balances) {
-      snapshot.balances = prev.balances;
-      Logger.log('Preserved previous snapshot.balances');
-    }
+    snapshot.balances = prev.balances;
+    Logger.log('Preserved previous snapshot.balances');
   }
   if (!snapshot.balances) snapshot.balances = {};
+
+  // Keep manual / PDF-only fields if the Finary file omitted them
+  if (prev && prev.balances) {
+    ['pee', 'peeDetail', 'costBasisFromPdf', 'peaContributions', 'livretHistory', 'peaTrades'].forEach(function (k) {
+      if (snapshot.balances[k] == null && prev.balances[k] != null) {
+        snapshot.balances[k] = prev.balances[k];
+      }
+    });
+  }
+
   snapshot.balances.budgets = budgets || [];
+
+  // Staging always comes from the live Money Manager SQLite (after Finary merge)
   if (savings && savings.boursoLdds != null) {
     snapshot.balances.boursoLdds = savings.boursoLdds;
     snapshot.balances.boursoLddsSource = 'money-manager:Savings';
     snapshot.savingsProfile = savings;
+  } else if (prev && prev.savingsProfile) {
+    snapshot.savingsProfile = prev.savingsProfile;
+    if (snapshot.balances.boursoLdds == null && prev.savingsProfile.boursoLdds != null) {
+      snapshot.balances.boursoLdds = prev.savingsProfile.boursoLdds;
+      snapshot.balances.boursoLddsSource = prev.balances && prev.balances.boursoLddsSource
+        ? prev.balances.boursoLddsSource
+        : 'money-manager:Savings';
+    }
   }
+
+  snapshot.refreshMeta = {
+    walletFileId: LAST_WALLET_META_ && LAST_WALLET_META_.fileId || null,
+    walletUpdatedAt: LAST_WALLET_META_ && LAST_WALLET_META_.updatedAt || null,
+    finaryUpdatedAt: snapshot.balances.updatedAt || null,
+    boursoLdds: snapshot.balances.boursoLdds != null ? snapshot.balances.boursoLdds : null,
+    txCount: (snapshot.transactions || []).length,
+    budgetCount: (budgets || []).length,
+    exportedAt: snapshot.lastSync,
+  };
 
   const json = JSON.stringify(snapshot);
   const file = upsertJsonFile_(folder, JSON_FILE_NAME, json);
@@ -338,13 +375,36 @@ function runNow() { exportWalletToSheet(); }
 function readSQLiteFromDrive() {
   const folder = DriveApp.getFolderById(SQLITE_FOLDER_ID);
   const files  = folder.getFilesByName(SQLITE_FILE_NAME);
-  let newest = null, ts = -1;
-  while (files.hasNext()) {
-    const f = files.next();
-    const t = f.getLastUpdated().getTime();
-    if (t > ts) { newest = f; ts = t; }
+  const all = [];
+  while (files.hasNext()) all.push(files.next());
+  if (!all.length) throw new Error('wallet-database not found in ' + SQLITE_FOLDER_ID);
+
+  all.sort(function (a, b) {
+    return b.getLastUpdated().getTime() - a.getLastUpdated().getTime();
+  });
+  const newest = all[0];
+  const newestTs = newest.getLastUpdated().getTime();
+
+  // Money Manager sometimes leaves duplicate wallet-database files — keep newest only.
+  for (var i = 1; i < all.length; i++) {
+    var older = all[i];
+    if (newestTs - older.getLastUpdated().getTime() > 60 * 1000) {
+      try {
+        Logger.log('Trashing older wallet-database ' + older.getId()
+          + ' @ ' + older.getLastUpdated().toISOString());
+        older.setTrashed(true);
+      } catch (e) {
+        Logger.log('Could not trash older wallet-database: ' + e.message);
+      }
+    }
   }
-  if (!newest) throw new Error('wallet-database not found in ' + SQLITE_FOLDER_ID);
+
+  LAST_WALLET_META_ = {
+    fileId: newest.getId(),
+    updatedAt: newest.getLastUpdated().toISOString(),
+    name: newest.getName(),
+    bytes: newest.getSize(),
+  };
   return newest.getBlob().getBytes();
 }
 
@@ -505,7 +565,13 @@ function parseSQLite(bytes) {
 
 function buildLookup(rows, keyCol, valCol) {
   const map = {};
-  rows.forEach(r => { map[r[keyCol]] = r[valCol]; });
+  rows.forEach(r => {
+    const k = r[keyCol];
+    const v = r[valCol];
+    map[k] = v;
+    map[String(k)] = v;
+    if (k != null && !isNaN(+k)) map[+k] = v;
+  });
   return map;
 }
 

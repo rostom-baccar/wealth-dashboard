@@ -1017,7 +1017,7 @@ const STATE = {
   transactions: [],
   savingsData: [],
   finaryOk: false, driveOk: false, savingsOk: false,
-  balancesSource: null, balanceDate: null, lastSnapshotSync: null,
+  balancesSource: null, balanceDate: null, lastSnapshotSync: null, refreshMeta: null,
   snapshotFetchError: null, snapshotSource: null,
 };
 
@@ -1136,7 +1136,7 @@ function clearSensitiveState() {
     monthlyCostBasis: 0, peaContributions: [], livretHistory: [], budgets: [],
     peaAlloc: [], transactions: [], savingsData: [],
     finaryOk: false, driveOk: false, savingsOk: false,
-    balancesSource: null, balanceDate: null, lastSnapshotSync: null,
+    balancesSource: null, balanceDate: null, lastSnapshotSync: null, refreshMeta: null,
     snapshotFetchError: null, snapshotSource: null,
   });
   Object.keys(charts).forEach(k => { try { charts[k]?.destroy?.(); } catch (_) {} delete charts[k]; });
@@ -1229,15 +1229,28 @@ function derivePeaMonthlyFromFinary() {
   STATE.peaMonthly = Math.max(0, Math.round(cb / months));
 }
 
-function applyBalancesPayload(b, { persist = true } = {}) {
+function applyBalancesPayload(b, { persist = true, live = false } = {}) {
   if (!b || typeof b !== 'object') return false;
+  if (live) {
+    // Live Refresh must not keep stale pea/livret/staging from an older localStorage merge.
     if (b.pea != null) STATE.pea = +b.pea;
     if (b.livretA != null) STATE.livretA = +b.livretA;
     if (b.pee != null) STATE.pee = +b.pee;
-  if (b.checking != null) STATE.checking = +b.checking;
-  if (b.boursoLdds != null) STATE.boursoLdds = +b.boursoLdds;
-    if (b.costBasis != null) STATE.monthlyCostBasis = +b.costBasis;
-    if (b.monthlyNetIncome != null) STATE.monthlyNetIncome = +b.monthlyNetIncome;
+    if (Object.prototype.hasOwnProperty.call(b, 'checking')) {
+      STATE.checking = b.checking == null || b.checking === '' ? null : +b.checking;
+    }
+    if (Object.prototype.hasOwnProperty.call(b, 'boursoLdds')) {
+      STATE.boursoLdds = b.boursoLdds == null || b.boursoLdds === '' ? null : +b.boursoLdds;
+    }
+  } else {
+    if (b.pea != null) STATE.pea = +b.pea;
+    if (b.livretA != null) STATE.livretA = +b.livretA;
+    if (b.pee != null) STATE.pee = +b.pee;
+    if (b.checking != null) STATE.checking = +b.checking;
+    if (b.boursoLdds != null) STATE.boursoLdds = +b.boursoLdds;
+  }
+  if (b.costBasis != null) STATE.monthlyCostBasis = +b.costBasis;
+  if (b.monthlyNetIncome != null) STATE.monthlyNetIncome = +b.monthlyNetIncome;
   if (Array.isArray(b.peaAlloc) && b.peaAlloc.length) STATE.peaAlloc = b.peaAlloc;
   if (b.peaMonthsActive != null) STATE.peaMonthsActive = +b.peaMonthsActive;
   if (b.peaStartedAt) STATE.peaStartedAt = b.peaStartedAt;
@@ -1251,6 +1264,16 @@ function applyBalancesPayload(b, { persist = true } = {}) {
   else derivePeaMonthlyFromFinary();
   if (persist) persistBalancesState();
   return true;
+}
+
+function ageLabel(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const hours = (Date.now() - d.getTime()) / 3600000;
+  if (hours < 1) return 'just now';
+  if (hours < 48) return `${Math.round(hours)}h`;
+  return `${Math.floor(hours / 24)}d`;
 }
 
 function loadBalancesFromStorage() {
@@ -1304,7 +1327,7 @@ function checkinDataFingerprint() {
   ].join('|');
 }
 
-function applySnapshotData(data) {
+function applySnapshotData(data, { live = false } = {}) {
   if (!data || !Array.isArray(data.transactions)) throw new Error('Invalid snapshot JSON');
   const fp = ledgerFingerprint(data);
   let ledgerChanged = false;
@@ -1318,13 +1341,18 @@ function applySnapshotData(data) {
       amount: parseFloat(t.amount), memo: t.memo || '',
     })).filter(t => t.date && !isNaN(+t.date) && !isNaN(t.amount))
       .sort((a, b) => b.date - a.date);
-    STATE.driveOk = true;
+  STATE.driveOk = true;
   STATE.lastSnapshotSync = data.lastSync || data.servedAt || null;
-  if (data.balances) applyBalancesPayload(data.balances);
+  STATE.refreshMeta = data.refreshMeta || null;
+  if (data.balances) applyBalancesPayload(data.balances, { live });
   // Money Manager Savings → LDDS staging (may be top-level even when balances omitted it)
   const savingsLdds = data.savingsProfile && data.savingsProfile.boursoLdds;
   if (savingsLdds != null && isFinite(+savingsLdds)) {
     STATE.boursoLdds = +savingsLdds;
+    try { persistBalancesState(); } catch (_) {}
+  } else if (live && data.balances && Object.prototype.hasOwnProperty.call(data.balances, 'boursoLdds')
+    && data.balances.boursoLdds == null) {
+    STATE.boursoLdds = null;
     try { persistBalancesState(); } catch (_) {}
   }
   if (Array.isArray(data.budgets) && data.budgets.length) {
@@ -3622,11 +3650,34 @@ function jsonpRequest(url, timeoutMs = 120000) {
 async function fetchLiveSnapshotFromAppsScript() {
   const base = getExportWebAppUrl();
   if (!base) throw new Error('No Apps Script URL — set it in Settings');
-  const url = base + (base.includes('?') ? '&' : '?') + 'full=1';
+  // Cache-bust + force a full rebuild (spend + staging + finary merge) every click.
+  const url = base + (base.includes('?') ? '&' : '?') + 'full=1&fresh=1&_=' + Date.now();
   const data = await jsonpRequest(url, 120000);
   if (!data || data.ok === false) throw new Error((data && data.error) || 'Apps Script error');
   if (!Array.isArray(data.transactions)) throw new Error('Apps Script response missing transactions');
   return data;
+}
+
+function refreshStatusPills() {
+  const meta = STATE.refreshMeta || {};
+  const spendAge = ageLabel(meta.walletUpdatedAt || STATE.lastSnapshotSync);
+  const finaryAge = ageLabel(meta.finaryUpdatedAt || STATE.balanceDate);
+  const staging = STATE.boursoLdds;
+  const nBud = (STATE.budgets || []).length;
+  const finaryStale = (() => {
+    const iso = meta.finaryUpdatedAt || STATE.balanceDate;
+    if (!iso) return true;
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return true;
+    return (Date.now() - d.getTime()) > 36 * 3600000;
+  })();
+  return [
+    `<span class="pill pill-ok">Refresh ✓</span>`,
+    `<span class="pill pill-ok" title="Money Manager sqlite → spend ledger">Spend ${STATE.transactions.length}tx${spendAge ? ' · ' + spendAge : ''}</span>`,
+    `<span class="pill ${staging != null ? 'pill-ok' : 'pill-err'}" title="Savings → Bourso LDDS staging">Staging ${staging != null ? fmt(staging) : '—'}</span>`,
+    `<span class="pill ${STATE.finaryOk && !finaryStale ? 'pill-ok' : 'pill-err'}" title="Drive finary-balances.json (ask Cursor to sync Finary when stale)">Finary ${STATE.finaryOk ? (finaryAge || '✓') : '✗'}${finaryStale && STATE.finaryOk ? ' stale' : ''}</span>`,
+    nBud ? `<span class="pill pill-ok">${nBud} budgets</span>` : `<span class="pill pill-err">0 budgets</span>`,
+  ].join('');
 }
 
 async function refreshAll() {
@@ -3645,10 +3696,10 @@ async function refreshAll() {
     return;
   }
 
-  if (status) status.innerHTML = `<span class="pill pill-load">Refreshing wallet + budgets + Drive balances…</span>`;
+  if (status) status.innerHTML = `<span class="pill pill-load">Refreshing spend + staging + Finary…</span>`;
   try {
     const data = await fetchLiveSnapshotFromAppsScript();
-    const ledgerChanged = applySnapshotData(data);
+    const ledgerChanged = applySnapshotData(data, { live: true });
     STATE.snapshotSource = 'apps-script-live';
     STATE.driveOk = true;
     await fetchSavings();
@@ -3662,14 +3713,7 @@ async function refreshAll() {
     if (firstRefreshMonth && ledgerChanged) {
       generateAiSummary(STATE.transactions, false).catch(() => {});
     }
-    const nBud = (STATE.budgets || []).length;
-    if (status) status.innerHTML = [
-      `<span class="pill pill-ok">Refresh ✓</span>`,
-      `<span class="pill ${STATE.finaryOk ? 'pill-ok' : 'pill-err'}">${STATE.finaryOk ? 'Balances ✓' : 'Balances ✗'}</span>`,
-      `<span class="pill ${STATE.savingsOk ? 'pill-ok' : 'pill-err'}">${STATE.savingsOk ? 'Wallet ✓' : 'Wallet ✗'}</span>`,
-      nBud ? `<span class="pill pill-ok">${nBud} budgets</span>` : `<span class="pill pill-err">0 budgets</span>`,
-      `<span class="pill">${STATE.transactions.length} tx</span>`,
-    ].join('');
+    if (status) status.innerHTML = refreshStatusPills();
   } catch (e) {
     const msg = e.message || String(e);
     console.warn('Live refresh failed:', msg);
