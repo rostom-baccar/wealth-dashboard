@@ -104,21 +104,25 @@ function extractSavingsStaging_(db, wallets) {
     }
   }
   if (savingsId == null) return null;
+  const walletName = (id) => String(
+    wallets[id] || wallets[+id] || wallets[String(id)] || ''
+  );
   let ldds = 0;
   let n = 0;
   (db['trans'] || []).forEach(t => {
-    if (t['account_id'] !== savingsId) return;
-    if (t['type'] !== 2) return; // transfers only
-    const toName = String(wallets[t['transfer_wallet_id']] || '');
+    // SQLite parser may yield string ids — coerce before comparing.
+    if (+t['account_id'] !== +savingsId) return;
+    if (+t['type'] !== 2) return; // transfers only
+    const toName = walletName(t['transfer_wallet_id']);
     if (!/ldds/i.test(toName)) return;
-    ldds += Math.abs(t['amount'] || 0) / 100.0;
+    ldds += Math.abs(+t['amount'] || 0) / 100.0;
     n++;
   });
   // Prefer live wallet balance when Money Manager has one
   (db['wallet'] || []).forEach(w => {
-    if (w['account_id'] !== savingsId) return;
+    if (+w['account_id'] !== +savingsId) return;
     if (!/ldds/i.test(String(w.name || ''))) return;
-    const bal = (w.amount || 0) / 100.0;
+    const bal = (+w.amount || 0) / 100.0;
     if (bal > 0) ldds = bal;
   });
   return {

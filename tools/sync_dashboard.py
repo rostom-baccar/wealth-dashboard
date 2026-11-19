@@ -55,8 +55,9 @@ def export_savings_staging(db_path: Path) -> dict | None:
         "SELECT amount, transfer_wallet_id FROM trans WHERE account_id = ? AND type = 2",
         (sid,),
     ):
-        to_name = wallets.get(t["transfer_wallet_id"]) or ""
-        if "ldds" not in to_name.lower():
+        to_id = t["transfer_wallet_id"]
+        to_name = wallets.get(to_id) or wallets.get(int(to_id) if to_id is not None else None) or ""
+        if "ldds" not in str(to_name).lower():
             continue
         ldds += abs(t["amount"] or 0) / 100.0
         n += 1

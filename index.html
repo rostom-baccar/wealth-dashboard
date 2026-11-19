@@ -1321,6 +1321,12 @@ function applySnapshotData(data) {
     STATE.driveOk = true;
   STATE.lastSnapshotSync = data.lastSync || data.servedAt || null;
   if (data.balances) applyBalancesPayload(data.balances);
+  // Money Manager Savings → LDDS staging (may be top-level even when balances omitted it)
+  const savingsLdds = data.savingsProfile && data.savingsProfile.boursoLdds;
+  if (savingsLdds != null && isFinite(+savingsLdds)) {
+    STATE.boursoLdds = +savingsLdds;
+    try { persistBalancesState(); } catch (_) {}
+  }
   if (Array.isArray(data.budgets) && data.budgets.length) {
     STATE.budgets = data.budgets;
     try { persistBalancesState(); } catch (_) {}
