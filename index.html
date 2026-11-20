@@ -497,19 +497,27 @@ body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
 .hold-nums strong{display:block;font-family:var(--mono);font-size:16px}
 .hold-nums span{display:block;font-family:var(--mono);font-size:12px;margin-top:3px}
 .pos{color:var(--ok)}.neg{color:var(--bad)}
-.fg-metrics{
-  display:flex;flex-direction:column;gap:0;max-width:420px;
+.fg-meta{
+  list-style:disc;margin:0 0 18px;padding:0 0 0 1.15em;
+  color:var(--muted);font-size:13px;line-height:1.55;max-width:none;
 }
+.fg-meta li{margin:0 0 4px}
+.fg-meta li::marker{color:var(--muted)}
+.fg-meta strong{color:var(--text);font-weight:600}
+.fg-metrics{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 48px;
+  width:100%;max-width:none;
+}
+@media(max-width:640px){.fg-metrics{grid-template-columns:1fr}}
 .fg-row{
   display:flex;justify-content:space-between;align-items:baseline;gap:16px;
   padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;
 }
-.fg-row:last-child{border-bottom:0}
 .fg-row .fg-lbl{color:var(--muted);font-style:italic}
 .fg-row .fg-val{font-family:var(--mono);font-weight:600;color:var(--text)}
 .fg-row .fg-val.pos{color:var(--ok)}
 .fg-row .fg-val.neg{color:var(--bad)}
-.fg-gap{height:10px;border:0;padding:0;margin:0}
+.fg-gap{display:none}
 .proj-controls{
   display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
   gap:12px;margin:0 0 14px;
@@ -766,10 +774,10 @@ body.anon .inc-chip strong,body.anon .budget-row,body.anon .hold-row,body.anon .
         <button type="button" class="fold-tog" aria-label="Collapse section" aria-expanded="true" onclick="toggleFold('spend-fg')">▼</button>
         <div class="section-head">
           <h2>Food &amp; Groceries</h2>
-          <p id="fg-period"></p>
         </div>
       </div>
       <div class="fold-body">
+        <ul id="fg-period" class="fg-meta" aria-label="Food &amp; Groceries context"></ul>
         <div id="fg-metrics" class="fg-metrics"></div>
       </div>
     </div>
@@ -2628,14 +2636,16 @@ function renderFoodGroceriesMetrics(txs) {
   if (!el) return;
   const m = computeFoodGroceriesMetrics(txs, STATE.budgets);
   if (periodEl) {
-    periodEl.textContent =
-      `${m.budgetName} · ${m.periodLabel}` +
-      (m.categories.length ? ` · ${m.categories.join(', ')}` : '') +
-      ` · as of ${m.asOfLabel} · calculated ${m.calculatedAt}`;
+    const cats = m.categories.length ? m.categories.join(', ') : '—';
+    periodEl.innerHTML = [
+      `<li><strong>Period</strong> ${m.periodLabel}</li>`,
+      `<li><strong>Categories</strong> ${cats}</li>`,
+      `<li><strong>As of</strong> ${m.asOfLabel} · <strong>calculated</strong> ${m.calculatedAt}</li>`,
+    ].join('');
   }
 
   const rows = [];
-  FG_METRIC_GROUPS.forEach((group, gi) => {
+  FG_METRIC_GROUPS.forEach((group) => {
     group.fields.forEach(field => {
       const raw = m[field];
       let display;
@@ -2656,7 +2666,6 @@ function renderFoodGroceriesMetrics(txs) {
         `<span class="${cls}">${display}</span></div>`
       );
     });
-    if (gi < FG_METRIC_GROUPS.length - 1) rows.push('<div class="fg-gap" aria-hidden="true"></div>');
   });
   el.innerHTML = rows.join('');
 }
