@@ -624,9 +624,9 @@ body.anon .inc-chip strong,body.anon .budget-row,body.anon .hold-row,body.anon .
           </div>
           <div class="chart-toolbar-mid">
             <div class="chart-pane-tabs" role="tablist" aria-label="Performance history">
-              <button type="button" class="on" data-perf-hist="overall" onclick="setPerfHistTab('overall')">Overall</button>
+              <button type="button" class="on" data-perf-hist="overall" onclick="setPerfHistTab('overall')">Wealth</button>
               <button type="button" data-perf-hist="you" onclick="setPerfHistTab('you')">Surplus</button>
-              <button type="button" data-perf-hist="markets" onclick="setPerfHistTab('markets')">Markets</button>
+              <button type="button" data-perf-hist="pea" onclick="setPerfHistTab('pea')">PEA</button>
             </div>
           </div>
           <div class="chart-toolbar-right">
@@ -1614,13 +1614,25 @@ function readNwLog() {
 }
 
 /** One NW point per calendar day so “vs previous month” has a real baseline. */
-function recordNwSnapshot(nw, atMs = Date.now()) {
+function recordNwSnapshot(nw, atMs = Date.now(), extras = null) {
   if (!(nw > 0)) return;
   const day = new Date(atMs);
   day.setHours(0, 0, 0, 0);
   const at = day.getTime();
+  const prev = readNwLog().find(e => e.at === at);
   const log = readNwLog().filter(e => e.at !== at);
-  log.push({ nw, at });
+  const entry = { nw, at };
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const peaEx = extras && extras.pea > 0 ? Math.round(extras.pea) : null;
+  const livEx = extras && extras.livret > 0 ? Math.round(extras.livret) : null;
+  if (peaEx != null) entry.pea = peaEx;
+  else if (at === today.getTime() && STATE.pea > 0) entry.pea = Math.round(STATE.pea);
+  else if (prev && prev.pea > 0) entry.pea = prev.pea;
+  if (livEx != null) entry.livret = livEx;
+  else if (at === today.getTime() && STATE.livretA > 0) entry.livret = Math.round(STATE.livretA);
+  else if (prev && prev.livret > 0) entry.livret = prev.livret;
+  log.push(entry);
   log.sort((a, b) => a.at - b.at);
   localStorage.setItem('dashboard_nw_log', JSON.stringify(log.slice(-400)));
 }
@@ -1650,7 +1662,10 @@ function seedNwLogFromWealthHistory() {
     day.setHours(0, 0, 0, 0);
     const at = day.getTime();
     if (at >= todayMs || existing.has(at)) return;
-    recordNwSnapshot(p.nw, at);
+    recordNwSnapshot(p.nw, at, {
+      pea: p.pea > 0 ? p.pea : null,
+      livret: p.livret > 0 ? p.livret : null,
+    });
     existing.add(at);
   });
 }
@@ -1790,22 +1805,73 @@ function walletNetInWindow(txs, fromAt, toAt = Date.now()) {
   return { net: inc - exp, inc, exp, n, from, to };
 }
 
+/** PEA balance points for period compares (log snapshots + reconstructed history). */
+function peaCandidates() {
+  const byDay = new Map();
+  readNwLog().forEach(e => {
+    if (e && e.pea > 0 && e.at) byDay.set(e.at, { pea: e.pea, at: e.at, source: 'log' });
+  });
+  if (typeof wealthHistorySeries === 'function') {
+    wealthHistorySeries().forEach(p => {
+      if (!p || !(p.pea > 0) || !p.date) return;
+      const day = new Date(p.date);
+      day.setHours(0, 0, 0, 0);
+      const at = day.getTime();
+      if (byDay.has(at) && byDay.get(at).source === 'log') return;
+      byDay.set(at, { pea: Math.round(p.pea), at, source: p.source || 'approx' });
+    });
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (STATE.pea > 0) {
+    byDay.set(today.getTime(), { pea: Math.round(STATE.pea), at: today.getTime(), source: 'live' });
+  }
+  return [...byDay.values()].sort((a, b) => a.at - b.at);
+}
+
+function peaAtOrBefore(atMs) {
+  let best = null;
+  for (const e of peaCandidates()) {
+    if (e.at <= atMs) best = e;
+    else break;
+  }
+  return best;
+}
+
+function peaFundedInWindow(fromMs, toMs) {
+  return Math.round((STATE.peaContributions || [])
+    .filter(c => c.date && c.amount != null)
+    .map(c => ({ date: parseWalletDate(c.date), amount: +c.amount }))
+    .filter(c => c.date && !isNaN(+c.date) && +c.date >= fromMs && +c.date <= toMs)
+    .reduce((s, c) => s + c.amount, 0));
+}
+
+function peaWindowDelta(fromMs, toMs = Date.now()) {
+  const start = peaAtOrBefore(fromMs - 1) || peaAtOrBefore(fromMs);
+  const end = peaAtOrBefore(toMs);
+  if (!start || !end) return null;
+  return Math.round(end.pea - start.pea);
+}
+
 /**
  * Vs-window split for perf-history / AI only — not shown in the hero.
- * Plug (wealthΔ − wallet net) is timing + mark-to-market noise, not a clean “markets” figure.
+ * Uses real PEA balance Δ (not NWΔ − wallet residual).
  */
 function computeWealthPerfSplit(hero, txs) {
   if (!hero || hero.pending || !(hero.baseline?.at > 0) || hero.amount == null) return null;
   const flow = walletNetInWindow(txs, hero.baseline.at);
   const controllable = Math.round(flow.net);
   const wealthDelta = Math.round(hero.amount);
-  const markets = Math.round(wealthDelta - controllable);
+  const peaDelta = peaWindowDelta(hero.baseline.at, Date.now());
+  const funded = peaFundedInWindow(hero.baseline.at, Date.now());
   return {
     wealthDelta,
     controllable,
-    markets,
+    peaDelta,
+    peaFunded: funded,
+    peaMarkToMarket: peaDelta != null ? Math.round(peaDelta - funded) : null,
     controllableDir: deltaDir(controllable),
-    marketsDir: deltaDir(markets),
+    peaDir: peaDelta != null ? deltaDir(peaDelta) : 'flat',
     windowFrom: hero.baseline.at,
     windowLabel: hero.baseline.label || null,
     windowWhen: hero.baseline.when || null,
@@ -1876,6 +1942,10 @@ function toggleFold(id) {
 }
 
 let perfHistTab = localStorage.getItem('dashboard_perf_hist_tab') || 'overall';
+if (perfHistTab === 'markets') {
+  perfHistTab = 'pea'; // legacy residual tab → real PEA
+  try { localStorage.setItem('dashboard_perf_hist_tab', 'pea'); } catch (_) {}
+}
 let perfHistCum = localStorage.getItem('dashboard_perf_hist_cum') === '1';
 const PERF_HIST_LOOKBACKS = [
   { id: '6m', months: 6, label: '6M' },
@@ -1973,7 +2043,7 @@ function nwAtOrBefore(atMs) {
   return best;
 }
 
-/** Monthly / multi-month bins: overall ΔNW, you (wallet), markets (residual). */
+/** Monthly / multi-month bins: wealth ΔNW, surplus (wallet), PEA balance Δ. */
 function buildPerfHistoryBins(txs) {
   const spec = perfHistorySpec();
   const now = new Date();
@@ -1994,7 +2064,11 @@ function buildPerfHistoryBins(txs) {
     const nwEnd = endSnap && endSnap.nw > 0 ? Math.round(endSnap.nw) : null;
     const overall = (startSnap && endSnap) ? Math.round(endSnap.nw - startSnap.nw) : null;
     const you = Math.round(walletNetInWindow(txs || STATE.transactions, from, to).net);
-    const markets = overall != null ? Math.round(overall - you) : null;
+    const peaStart = peaAtOrBefore(from - 1) || peaAtOrBefore(from);
+    const peaEndSnap = peaAtOrBefore(to);
+    const peaEnd = peaEndSnap && peaEndSnap.pea > 0 ? Math.round(peaEndSnap.pea) : null;
+    const pea = (peaStart && peaEndSnap) ? Math.round(peaEndSnap.pea - peaStart.pea) : null;
+    const peaFunded = peaFundedInWindow(from, to);
     let label;
     if (spec.monthsPerBin === 12) {
       label = String(cursor.getFullYear());
@@ -2003,14 +2077,15 @@ function buildPerfHistoryBins(txs) {
     } else {
       label = cursor.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
     }
-    bins.push({ label, from, to, overall, you, markets, nwEnd });
+    bins.push({ label, from, to, overall, you, pea, peaFunded, peaEnd, nwEnd });
     cursor = new Date(cursor.getFullYear(), cursor.getMonth() - spec.monthsPerBin, 1);
   }
   return { spec, bins: bins.reverse() };
 }
 
 function setPerfHistTab(tab) {
-  perfHistTab = tab === 'you' || tab === 'markets' ? tab : 'overall';
+  if (tab === 'markets') tab = 'pea';
+  perfHistTab = tab === 'you' || tab === 'pea' ? tab : 'overall';
   try { localStorage.setItem('dashboard_perf_hist_tab', perfHistTab); } catch (_) {}
   document.querySelectorAll('[data-perf-hist]').forEach(btn => {
     btn.classList.toggle('on', btn.getAttribute('data-perf-hist') === perfHistTab);
@@ -2058,24 +2133,37 @@ function toWealthLevelSeries(bins) {
   });
 }
 
+/** Absolute PEA at each bin end; forward-fill so gaps don’t drop the level. */
+function toPeaLevelSeries(bins) {
+  let last = null;
+  return bins.map(b => {
+    if (b.peaEnd != null && isFinite(b.peaEnd)) last = b.peaEnd;
+    return last;
+  });
+}
+
 function drawPerfHistory() {
   const canvas = document.getElementById('perfHistChart');
   if (!canvas) return;
   if (charts.perfHist) { charts.perfHist.destroy(); delete charts.perfHist; }
 
   const { spec, bins } = buildPerfHistoryBins(STATE.transactions);
-  const key = perfHistTab === 'you' ? 'you' : (perfHistTab === 'markets' ? 'markets' : 'overall');
+  const key = perfHistTab === 'you' ? 'you' : (perfHistTab === 'pea' || perfHistTab === 'markets' ? 'pea' : 'overall');
   const periodValues = bins.map(b => b[key]);
-  // Overall cumulative = wealth level (ends near current NW). You/Markets stay running Δ sums.
+  // Wealth/PEA cumulative = balance level. Surplus stays running Δ sums.
   const overallAsLevel = perfHistCum && key === 'overall';
-  const values = overallAsLevel
-    ? toWealthLevelSeries(bins)
+  const peaAsLevel = perfHistCum && key === 'pea';
+  const asLevel = overallAsLevel || peaAsLevel;
+  const values = asLevel
+    ? (key === 'pea' ? toPeaLevelSeries(bins) : toWealthLevelSeries(bins))
     : (perfHistCum ? toCumulativeSeries(periodValues) : periodValues);
   const baseTitle = key === 'you'
     ? 'Surplus (wallet net / period)'
-    : (key === 'markets' ? 'Markets (non-controllable)' : (overallAsLevel ? 'Net worth' : 'Overall wealth change'));
-  const title = perfHistCum && !overallAsLevel ? `${baseTitle} · cumulative` : baseTitle;
-  // Surplus → mean savings habit. Overall/Markets → median Δ (less skewed by crash/rally bins).
+    : (key === 'pea'
+      ? (peaAsLevel ? 'PEA balance' : 'PEA change')
+      : (overallAsLevel ? 'Net worth' : 'Wealth change'));
+  const title = perfHistCum && !asLevel ? `${baseTitle} · cumulative` : baseTitle;
+  // Surplus → mean savings habit. Wealth/PEA → median Δ (less skewed by crash/rally bins).
   const knownPeriod = periodValues.filter(v => v != null && isFinite(v));
   const useMedian = key !== 'you';
   const center = useMedian
@@ -2088,20 +2176,20 @@ function drawPerfHistory() {
   const flowTotal = knownPeriod.length
     ? Math.round(knownPeriod.reduce((s, v) => s + v, 0))
     : null;
-  const levelNow = overallAsLevel
+  const levelNow = asLevel
     ? (values.filter(v => v != null && isFinite(v)).slice(-1)[0] ?? null)
     : null;
-  const total = overallAsLevel ? levelNow : flowTotal;
+  const total = asLevel ? levelNow : flowTotal;
   const totalText = total == null
     ? 'n/a'
-    : (anonMode ? '•••' : (overallAsLevel ? fmt(total) : fmtDelta(total, null)));
-  const totalChipLbl = overallAsLevel ? 'Now' : 'Total';
+    : (anonMode ? '•••' : (asLevel ? fmt(total) : fmtDelta(total, null)));
+  const totalChipLbl = asLevel ? 'Now' : 'Total';
   // In cumulative mode the dashed guide would sit at center/bin (wrong scale level) — hide it on the plot.
   const showAvgGuide = !perfHistCum && center != null;
   const avg = center; // guide plugin + chip use this level
   const colors = values.map((v, i) => {
     if (v == null) return 'rgba(139,154,171,0.35)';
-    if (overallAsLevel) {
+    if (asLevel) {
       const d = periodValues[i];
       if (d == null) return 'rgba(126,160,211,0.75)';
       if (d > 0) return 'rgba(107,207,155,0.85)';
@@ -2131,7 +2219,7 @@ function drawPerfHistory() {
         const totalLbl = totalWrap.querySelector('span:not([id])');
         if (totalLbl) totalLbl.textContent = totalChipLbl;
         totalValEl.textContent = totalText;
-        totalValEl.className = 'blur-val ' + (overallAsLevel ? 'flat' : (total == null ? 'flat' : deltaDir(total)));
+        totalValEl.className = 'blur-val ' + (asLevel ? 'flat' : (total == null ? 'flat' : deltaDir(total)));
       }
     }
   }
@@ -2248,12 +2336,21 @@ function drawPerfHistory() {
               if (c.datasetIndex === 1) return `${centerKind} / bin: ${avgText}`;
               if (c.raw == null) return `${title}: n/a`;
               const period = periodValues[c.dataIndex];
-              const rawTxt = overallAsLevel ? fmt(c.raw) : fmtDelta(c.raw, null);
+              const rawTxt = asLevel ? fmt(c.raw) : fmtDelta(c.raw, null);
               const main = anonMode ? `${title}: •••` : `${title}: ${rawTxt}`;
-              if (perfHistCum && period != null && isFinite(period) && !anonMode) {
-                return `${main} · period ${fmtDelta(period, null)}`;
+              if (anonMode) return main;
+              const bits = [main];
+              if (perfHistCum && period != null && isFinite(period)) {
+                bits.push(`period ${fmtDelta(period, null)}`);
               }
-              return main;
+              if (key === 'pea' && !asLevel) {
+                const funded = bins[c.dataIndex]?.peaFunded;
+                if (funded > 0) bits.push(`funded ${fmt(funded)}`);
+                if (period != null && funded > 0) {
+                  bits.push(`mkt ${fmtDelta(period - funded, null)}`);
+                }
+              }
+              return bits.join(' · ');
             },
           },
         },
@@ -4275,10 +4372,11 @@ function buildCheckinDossier(txs) {
   const perfSplit = boosts.perfSplit || computeWealthPerfSplit(hero, all);
   const wealthDelta = perfSplit ? perfSplit.wealthDelta : (hero ? Math.round(hero.amount) : null);
   const controllable = perfSplit ? perfSplit.controllable : Math.round(saved);
-  const residualVsCashflow = wealthDelta != null ? Math.round(wealthDelta - controllable) : null;
-  const portfolioLikelyDominant = wealthDelta != null
-    && Math.abs(wealthDelta) >= Math.max(250, Math.abs(controllable) * 1.25)
-    && Math.abs(residualVsCashflow) >= Math.abs(controllable);
+  const peaDelta = perfSplit ? perfSplit.peaDelta : null;
+  const peaFunded = perfSplit ? perfSplit.peaFunded : 0;
+  const peaMtm = perfSplit ? perfSplit.peaMarkToMarket : null;
+  const portfolioLikelyDominant = peaDelta != null
+    && Math.abs(peaDelta) >= Math.max(250, Math.abs(controllable) * 1.25);
 
   return {
     today: localDayStr(new Date()),
@@ -4304,16 +4402,17 @@ function buildCheckinDossier(txs) {
       wealthDeltaPct: hero && hero.pct != null ? +hero.pct.toFixed(2) : null,
       vs: hero?.baseline?.label || perfSplit?.windowLabel || null,
       baselineWhen: hero?.baseline?.when || perfSplit?.windowWhen || null,
-      note: 'Hero shows calendar-month surplus = householdNetThisMonthEur (same as Spend). controllablePerfEur is vs-window only for history/AI context, not the hero label.',
+      note: 'Hero shows calendar-month surplus = householdNetThisMonthEur (same as Spend). PEA figures are real PEA balance moves, not NWΔ − wallet residual.',
       controllablePerfEur: controllable,
-      nonControllablePerfEur: residualVsCashflow,
+      peaDeltaEur: peaDelta,
+      peaFundedEur: peaFunded,
+      peaMarkToMarketEur: peaMtm,
       householdNetThisMonthEur: Math.round(saved),
       incomeThisMonthEur: Math.round(inc),
       spendThisMonthEur: Math.round(exp),
       unbudgetedSpendThisMonthEur: Math.round(unbudgetedSpendTotal),
-      residualLikelyMarkToMarketOrOtherEur: residualVsCashflow,
       portfolioMoveLikelyDominatesWealthChange: portfolioLikelyDominant,
-      reading: 'Lead with calendar-month surplus (householdNetThisMonthEur). Wealth Δ vs baseline is separate; do not call residual “markets” in the hero sense.',
+      reading: 'Lead with calendar-month surplus (householdNetThisMonthEur). For investments use peaDeltaEur / peaMarkToMarketEur — never invent a residual “markets” plug.',
     },
     accounts: {
       netWorth: Math.round(netWorth()),
@@ -4444,7 +4543,7 @@ function buildCheckinPrompt(ctx) {
     'OUTPUT (strict):',
     '- ONE short paragraph of continuous prose. NO bullets, lists, headings, or emoji.',
     '- Bold a few key € with **like this**.',
-    '- Lead with the wealth move (You vs residual). If portfolioMoveLikelyDominatesWealthChange, lead with PEA/markets — do not blame small Leisure spends for a large NW drop.',
+    '- Lead with surplus and/or net-worth Δ. If portfolioMoveLikelyDominatesWealthChange, lead with PEA balance Δ (peaDeltaEur) — do not invent a residual “markets” plug or blame small Leisure spends for a large NW drop.',
     '- Mention a concrete memo/category from the dossier when it explains the month. Never invent events.',
     '- Use Google Search only if it helps explain a portfolio-dominated move as of ' + ctx.today + '.',
     '- End with one concrete next move. Not legal/tax advice.',
