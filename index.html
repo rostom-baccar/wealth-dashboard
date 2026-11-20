@@ -497,6 +497,19 @@ body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
 .hold-nums strong{display:block;font-family:var(--mono);font-size:16px}
 .hold-nums span{display:block;font-family:var(--mono);font-size:12px;margin-top:3px}
 .pos{color:var(--ok)}.neg{color:var(--bad)}
+.fg-metrics{
+  display:flex;flex-direction:column;gap:0;max-width:420px;
+}
+.fg-row{
+  display:flex;justify-content:space-between;align-items:baseline;gap:16px;
+  padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;
+}
+.fg-row:last-child{border-bottom:0}
+.fg-row .fg-lbl{color:var(--muted);font-style:italic}
+.fg-row .fg-val{font-family:var(--mono);font-weight:600;color:var(--text)}
+.fg-row .fg-val.pos{color:var(--ok)}
+.fg-row .fg-val.neg{color:var(--bad)}
+.fg-gap{height:10px;border:0;padding:0;margin:0}
 .proj-controls{
   display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
   gap:12px;margin:0 0 14px;
@@ -515,7 +528,7 @@ body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
   background:rgba(16,28,44,.45);
 }
 .chart-smooth-wrap{flex:1;min-width:140px;max-width:280px}
-body.anon .inc-chip strong,body.anon .budget-row,body.anon .hold-row{filter:blur(12px)!important;opacity:.15!important;user-select:none!important}
+body.anon .inc-chip strong,body.anon .budget-row,body.anon .hold-row,body.anon .fg-row{filter:blur(12px)!important;opacity:.15!important;user-select:none!important}
 
 </style>
 </head>
@@ -745,6 +758,19 @@ body.anon .inc-chip strong,body.anon .budget-row,body.anon .hold-row{filter:blur
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div class="fold on" data-fold="spend-fg">
+      <div class="fold-head">
+        <button type="button" class="fold-tog" aria-label="Collapse section" aria-expanded="true" onclick="toggleFold('spend-fg')">▼</button>
+        <div class="section-head">
+          <h2>Food &amp; Groceries</h2>
+          <p id="fg-period"></p>
+        </div>
+      </div>
+      <div class="fold-body">
+        <div id="fg-metrics" class="fg-metrics"></div>
       </div>
     </div>
   </section>
@@ -2462,6 +2488,166 @@ function renderCashflow(txs) {
   }).join('') || '<p style="color:var(--muted);font-size:13px;padding:12px 0">No movements.</p>';
 }
 
+/** Paris calendar Y/M/D — Food & Groceries metrics stay on the wall-clock day. */
+function parisYmd(d = new Date()) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(d);
+    return {
+      y: +parts.find(p => p.type === 'year')?.value,
+      m: +parts.find(p => p.type === 'month')?.value,
+      d: +parts.find(p => p.type === 'day')?.value,
+    };
+  } catch (_) {
+    return { y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate() };
+  }
+}
+
+function startOfLocalDay(y, m, d) {
+  return new Date(y, m - 1, d, 0, 0, 0, 0);
+}
+
+/**
+ * Port of Food & Groceries sheet SQL (sql.html):
+ * daily_budget, avg_daily_spending, dynamic_offset, daily_offset,
+ * dynamic_daily_budget, money_spent_today, budget_progress, days_remaining.
+ * Period = current calendar month [1st, next 1st) so live Spend stays month-aligned.
+ */
+function computeFoodGroceriesMetrics(txs, budgets, asOf = new Date()) {
+  const budget = (budgets || []).find(b =>
+    String(b.name || '').trim().toLowerCase() === 'food & groceries'
+  ) || null;
+  const fgBudget = budget ? +budget.amount : 470;
+  const categories = new Set(
+    (budget?.categories?.length ? budget.categories : ['Food', 'Groceries'])
+      .map(c => String(c || '').trim())
+      .filter(Boolean)
+  );
+
+  const { y, m, d: todayDay } = parisYmd(asOf);
+  const periodStart = startOfLocalDay(y, m, 1);
+  const periodEnd = startOfLocalDay(m === 12 ? y + 1 : y, m === 12 ? 1 : m + 1, 1); // exclusive
+  const lastDayInclusive = new Date(periodEnd.getTime() - 1);
+  const todayStart = startOfLocalDay(y, m, todayDay);
+  const analysisDate = todayStart < periodStart
+    ? periodStart
+    : (todayStart >= periodEnd ? startOfLocalDay(
+        lastDayInclusive.getFullYear(),
+        lastDayInclusive.getMonth() + 1,
+        lastDayInclusive.getDate()
+      ) : todayStart);
+
+  const msDay = 86400000;
+  const totalDays = Math.round((periodEnd - periodStart) / msDay);
+  const dailyBudget = totalDays > 0 ? Math.round((fgBudget / totalDays) * 100) / 100 : 0;
+
+  let daysElapsed = 0;
+  if (todayStart >= periodStart) {
+    daysElapsed = Math.min(
+      totalDays,
+      Math.floor((analysisDate - periodStart) / msDay) + 1
+    );
+  }
+  const daysRemaining = Math.max(0, Math.floor((periodEnd - analysisDate) / msDay));
+
+  const inCats = (t) => categories.has(String(t.category || '').trim());
+  // Wallet amounts are signed (expenses negative) — same as SQLite cents/100.
+  let totalSpent = 0;
+  let spentOnDay = 0;
+  const dayEnd = new Date(analysisDate.getTime() + msDay);
+  (txs || []).forEach(t => {
+    if (!t?.date || !inCats(t)) return;
+    if (t.date >= periodStart && t.date < periodEnd) totalSpent += +t.amount || 0;
+    if (t.date >= analysisDate && t.date < dayEnd) spentOnDay += +t.amount || 0;
+  });
+
+  const avgDaily = daysElapsed > 0
+    ? Math.round(((-1 * totalSpent) / daysElapsed) * 100) / 100
+    : 0;
+  const dynamicOffset = Math.round((totalSpent + dailyBudget * daysElapsed) * 100) / 100;
+  const dynamicDaily = daysRemaining > 0
+    ? Math.round(((fgBudget + totalSpent) / daysRemaining) * 100) / 100
+    : null;
+  const moneySpentToday = Math.round((-1 * spentOnDay) * 100) / 100;
+  const dailyOffset = Math.round((dailyBudget - moneySpentToday) * 100) / 100;
+  const spentAbs = Math.round(Math.abs(totalSpent) * 100) / 100;
+  const budgetProgress = `${spentAbs.toFixed(2)} / ${Math.round(fgBudget)}`;
+
+  const periodLabel =
+    periodStart.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) +
+    ' – ' +
+    lastDayInclusive.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  return {
+    budgetName: budget?.name || 'Food & Groceries',
+    categories: [...categories],
+    periodLabel,
+    daily_budget: dailyBudget,
+    avg_daily_spending: avgDaily,
+    dynamic_offset: dynamicOffset,
+    daily_offset: dailyOffset,
+    dynamic_daily_budget: dynamicDaily,
+    money_spent_today: moneySpentToday,
+    budget_progress: budgetProgress,
+    days_remaining: daysRemaining,
+  };
+}
+
+const FG_METRIC_GROUPS = [
+  { fields: ['daily_budget', 'avg_daily_spending'] },
+  { fields: ['dynamic_offset', 'daily_offset'] },
+  { fields: ['dynamic_daily_budget', 'money_spent_today', 'budget_progress'] },
+  { fields: ['days_remaining'] },
+];
+const FG_COLORIZED = new Set(['dynamic_offset', 'daily_offset']);
+const FG_LABELS = {
+  daily_budget: 'Daily budget',
+  avg_daily_spending: 'Avg daily spending',
+  dynamic_offset: 'Dynamic offset',
+  daily_offset: 'Daily offset',
+  dynamic_daily_budget: 'Dynamic daily budget',
+  money_spent_today: 'Spent today',
+  budget_progress: 'Budget progress',
+  days_remaining: 'Days remaining',
+};
+
+function renderFoodGroceriesMetrics(txs) {
+  const el = document.getElementById('fg-metrics');
+  const periodEl = document.getElementById('fg-period');
+  if (!el) return;
+  const m = computeFoodGroceriesMetrics(txs, STATE.budgets);
+  if (periodEl) {
+    periodEl.textContent = `${m.budgetName} · ${m.periodLabel}` +
+      (m.categories.length ? ` · ${m.categories.join(', ')}` : '');
+  }
+
+  const rows = [];
+  FG_METRIC_GROUPS.forEach((group, gi) => {
+    group.fields.forEach(field => {
+      const raw = m[field];
+      let display;
+      let cls = 'fg-val blur-val';
+      if (field === 'budget_progress') {
+        display = raw;
+      } else if (field === 'days_remaining') {
+        display = raw == null ? '—' : String(raw);
+      } else if (raw == null || !Number.isFinite(+raw)) {
+        display = '—';
+      } else {
+        const n = +raw;
+        display = (n < 0 ? '−' : '') + fmt2(n);
+        if (FG_COLORIZED.has(field)) cls += n < 0 ? ' neg' : ' pos';
+      }
+      rows.push(
+        `<div class="fg-row"><span class="fg-lbl">${FG_LABELS[field] || field}</span>` +
+        `<span class="${cls}">${display}</span></div>`
+      );
+    });
+    if (gi < FG_METRIC_GROUPS.length - 1) rows.push('<div class="fg-gap" aria-hidden="true"></div>');
+  });
+  el.innerHTML = rows.join('');
+}
 
 function rangeCutoff(group) {
   const id = (group && tabRange[group]) || tabRange.wealth || '1Y';
@@ -3601,6 +3787,7 @@ function renderAll(txs) {
   renderHero();
   renderCashflow(txs || []);
   renderBudgets(txs || []);
+  renderFoodGroceriesMetrics(txs || []);
   renderPeaSummary();
   renderPeaHoldings();
   renderLivretPanel();
