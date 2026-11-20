@@ -584,7 +584,7 @@ body.anon .inc-chip strong,body.anon .budget-row,body.anon .hold-row,body.anon .
             <span class="ai-tag">How you're doing</span>
             <button type="button" class="btn" id="ai-refresh-btn" onclick="forceAiRefresh()">Refresh check-in</button>
           </div>
-          <div id="ai-body"><span class="ai-loading">Unlock to load your check-in…</span></div>
+          <div id="ai-body"><p class="muted">Check-in is manual — click <strong>Refresh check-in</strong> when you want Gemini.</p></div>
           <p class="ai-status" id="ai-status"></p>
         </div>
       </aside>
@@ -938,7 +938,7 @@ body.anon .inc-chip strong,body.anon .budget-row,body.anon .hold-row,body.anon .
     <p class="hint">Not in net worth — staging / expected PEA only.</p>
     <label for="modal-gemini">Gemini API key (browser only)</label>
     <input id="modal-gemini" type="password" autocomplete="off" placeholder="AIza…">
-    <p class="hint">Live check-in in the hero. Without it: offline template only.</p>
+    <p class="hint">Gemini notes are manual (Refresh check-in / Refresh note). Without a key: offline template only.</p>
     <label for="modal-export-url">Apps Script web app URL</label>
     <input id="modal-export-url" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec">
     <p class="hint">Live Refresh. After WalletExport.gs changes: Deploy → New version.</p>
@@ -2579,11 +2579,20 @@ function computeFoodGroceriesMetrics(txs, budgets, asOf = new Date()) {
     periodStart.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) +
     ' – ' +
     lastDayInclusive.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const asOfLabel = analysisDate.toLocaleDateString('en-GB', {
+    weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
+  });
+  const calculatedAt = asOf.toLocaleString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
 
   return {
     budgetName: budget?.name || 'Food & Groceries',
     categories: [...categories],
     periodLabel,
+    asOfLabel,
+    calculatedAt,
     daily_budget: dailyBudget,
     avg_daily_spending: avgDaily,
     dynamic_offset: dynamicOffset,
@@ -2619,8 +2628,10 @@ function renderFoodGroceriesMetrics(txs) {
   if (!el) return;
   const m = computeFoodGroceriesMetrics(txs, STATE.budgets);
   if (periodEl) {
-    periodEl.textContent = `${m.budgetName} · ${m.periodLabel}` +
-      (m.categories.length ? ` · ${m.categories.join(', ')}` : '');
+    periodEl.textContent =
+      `${m.budgetName} · ${m.periodLabel}` +
+      (m.categories.length ? ` · ${m.categories.join(', ')}` : '') +
+      ` · as of ${m.asOfLabel} · calculated ${m.calculatedAt}`;
   }
 
   const rows = [];
@@ -4510,7 +4521,12 @@ function hydrateCheckinFromCache() {
   const cached = getAiCache();
   if (cached && cached.text) {
     el.innerHTML = renderAiHtml(cached.text);
-    setCheckinStatus('Cached · refresh to update', 'ok');
+    const when = cached.at
+      ? new Date(cached.at).toLocaleString('en-GB', {
+          day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+        })
+      : null;
+    setCheckinStatus(when ? `Cached · ${when}` : 'Cached · refresh to update', 'ok');
     return;
   }
   el.innerHTML = '<p class="muted">Check-in is manual — click <strong>Refresh check-in</strong> when you want Gemini.</p>';
@@ -4523,7 +4539,12 @@ function hydrateSpendAiFromCache() {
   const cached = getSpendAiCache();
   if (cached && cached.text) {
     el.innerHTML = renderAiHtml(cached.text);
-    setSpendAiStatus('Cached · refresh to update', 'ok');
+    const when = cached.at
+      ? new Date(cached.at).toLocaleString('en-GB', {
+          day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+        })
+      : null;
+    setSpendAiStatus(when ? `Cached · ${when}` : 'Cached · refresh to update', 'ok');
     return;
   }
   el.innerHTML = '<p class="muted">Spend note is manual — click <strong>Refresh note</strong> when you want Gemini.</p>';
