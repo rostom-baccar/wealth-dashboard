@@ -723,7 +723,7 @@ body.anon .inc-chip strong,body.anon .budget-row,body.anon .hold-row,body.anon .
               <span class="ai-tag">Spend note</span>
               <button type="button" class="btn" id="spend-ai-refresh-btn" onclick="forceSpendAiRefresh()">Refresh note</button>
             </div>
-            <div id="spend-ai-body"><span class="ai-loading">Open Spend to load a note on this month’s spending…</span></div>
+            <div id="spend-ai-body"><p class="muted">Spend note is manual — click <strong>Refresh note</strong> when you want Gemini.</p></div>
             <p class="ai-status" id="spend-ai-status"></p>
           </div>
         </aside>
@@ -1405,7 +1405,7 @@ async function unlockWithPassphrase(passphrase, remember) {
   renderAll(STATE.transactions);
   // First-ever baseline so the next visit can show “vs last check”
   if (!readNwCheckpoint()) commitNwCheckpoint(netWorth(), true);
-  generateAiSummary(STATE.transactions, false).catch(() => {});
+  hydrateAiPanelsFromCache();
   return true;
 }
 
@@ -1557,9 +1557,10 @@ function saveBalancesFromModal() {
   persistBalancesState();
   hideBalanceModal();
   renderAll(STATE.transactions);
-  // Balances/settings feed the check-in — refresh when the fingerprint moved (or key changed).
+  // Gemini is manual-only — if the key/fingerprint moved, drop stale cache and prompt.
   if (gemini !== prevGemini || checkinDataFingerprint() !== prevFp) {
-    generateAiSummary(STATE.transactions, true).catch(() => {});
+    hydrateAiPanelsFromCache();
+    setCheckinStatus('Data changed · refresh check-in', 'warn');
   }
 }
 
@@ -2753,7 +2754,7 @@ function setTab(id, persist = true, { scroll = false } = {}) {
       if (isFoldOpen('hero-perf')) drawPerfHistory();
     }
     if (id === 'spend' && vaultUnlocked) {
-      generateSpendAiSummary(STATE.transactions, false).catch(() => {});
+      hydrateSpendAiFromCache();
     }
     if (id === 'pea') {
       syncProjControlsUI();
@@ -3893,12 +3894,11 @@ async function refreshAll() {
     renderAll(STATE.transactions);
     // Snapshot NW after a successful Refresh so the next visit can show “vs last check”
     commitNwCheckpoint(netWorth(), true);
-    // Gemini: only auto-run on the first successful Refresh of the calendar month.
-    // Otherwise use the check-in button (avoids burning quota on every wallet sync).
-    const firstRefreshMonth = isFirstDashboardRefreshThisMonth();
     markDashboardRefreshMonth();
-    if (firstRefreshMonth && ledgerChanged) {
-      generateAiSummary(STATE.transactions, false).catch(() => {});
+    // Gemini check-in / spend note stay manual (Refresh check-in / Refresh note).
+    if (ledgerChanged) {
+      hydrateAiPanelsFromCache();
+      setCheckinStatus('Wallet updated · refresh check-in', 'warn');
     }
     if (status) status.innerHTML = refreshStatusPills();
   } catch (e) {
@@ -4503,13 +4503,44 @@ async function callGeminiCheckin(apiKey, prompt, { withSearch = true, model } = 
   return { text, model: modelId, grounded, data };
 }
 
-async function generateAiSummary(txs, force = false) {
+/** Show cached Gemini text only — never calls the API. */
+function hydrateCheckinFromCache() {
   const el = document.getElementById('ai-body');
   if (!el) return;
   const cached = getAiCache();
-  if (!force && cached && (Date.now() - cached.at) < 86400000) {
+  if (cached && cached.text) {
     el.innerHTML = renderAiHtml(cached.text);
-    setCheckinStatus('Cached', 'ok');
+    setCheckinStatus('Cached · refresh to update', 'ok');
+    return;
+  }
+  el.innerHTML = '<p class="muted">Check-in is manual — click <strong>Refresh check-in</strong> when you want Gemini.</p>';
+  setCheckinStatus('Idle', '');
+}
+
+function hydrateSpendAiFromCache() {
+  const el = document.getElementById('spend-ai-body');
+  if (!el) return;
+  const cached = getSpendAiCache();
+  if (cached && cached.text) {
+    el.innerHTML = renderAiHtml(cached.text);
+    setSpendAiStatus('Cached · refresh to update', 'ok');
+    return;
+  }
+  el.innerHTML = '<p class="muted">Spend note is manual — click <strong>Refresh note</strong> when you want Gemini.</p>';
+  setSpendAiStatus('Idle', '');
+}
+
+function hydrateAiPanelsFromCache() {
+  hydrateCheckinFromCache();
+  hydrateSpendAiFromCache();
+}
+
+async function generateAiSummary(txs, force = false) {
+  const el = document.getElementById('ai-body');
+  if (!el) return;
+  // Non-force callers must not hit Gemini — use cache / idle copy only.
+  if (!force) {
+    hydrateCheckinFromCache();
     return;
   }
 
@@ -4749,10 +4780,9 @@ let spendAiGenerating = false;
 async function generateSpendAiSummary(txs, force = false) {
   const el = document.getElementById('spend-ai-body');
   if (!el) return;
-  const cached = getSpendAiCache();
-  if (!force && cached && (Date.now() - cached.at) < 86400000) {
-    el.innerHTML = renderAiHtml(cached.text);
-    setSpendAiStatus('Cached', 'ok');
+  // Non-force callers must not hit Gemini — use cache / idle copy only.
+  if (!force) {
+    hydrateSpendAiFromCache();
     return;
   }
 
@@ -4846,10 +4876,7 @@ async function forceSpendAiRefresh() {
   if (ok) {
     await fetchSavings();
     renderAll(STATE.transactions);
-    generateAiSummary(STATE.transactions, false).catch(() => {});
-    if (activeTab === 'spend') {
-      generateSpendAiSummary(STATE.transactions, false).catch(() => {});
-    }
+    hydrateAiPanelsFromCache();
   } else {
     clearSensitiveState();
     showUnlockModal();
