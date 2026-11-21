@@ -810,6 +810,11 @@ body.anon .inc-chip strong,body.anon .budget-row,body.anon .hold-row,body.anon .
             <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('peaHist')">
           </label>
         </div>
+        <div class="chart-style-bar" data-chart-style="peaPerf" data-toolbar-for="performance" hidden>          <label class="proj-slider chart-smooth-wrap" style="padding:6px 10px;margin:0">
+            <span>Smooth <strong data-chart-smooth-val>40%</strong></span>
+            <input type="range" data-chart-smooth min="0" max="100" step="5" value="40" oninput="onChartStyleChange('peaPerf')">
+          </label>
+        </div>
         <div class="traj-toggle" role="group" aria-label="Projection view" data-toolbar-for="future" hidden>
           <button type="button" class="on" id="tog-gross" onclick="setProjMode('gross')">Gross</button>
           <button type="button" id="tog-net" onclick="setProjMode('net')">Net after 5y</button>
@@ -819,6 +824,7 @@ body.anon .inc-chip strong,body.anon .budget-row,body.anon .hold-row,body.anon .
       <div class="chart-toolbar-mid">
         <div class="chart-pane-tabs" role="tablist" aria-label="PEA chart view">
           <button type="button" class="on" data-pane-for="pea" data-pane="existing" onclick="setChartPane('pea','existing')">Existing</button>
+          <button type="button" data-pane-for="pea" data-pane="performance" onclick="setChartPane('pea','performance')">Performance</button>
           <button type="button" data-pane-for="pea" data-pane="future" onclick="setChartPane('pea','future')">Future</button>
         </div>
       </div>
@@ -834,6 +840,10 @@ body.anon .inc-chip strong,body.anon .budget-row,body.anon .hold-row,body.anon .
       <div class="chart-wrap"><canvas id="trajChart"></canvas></div>
       <p class="traj-note" id="traj-note"></p>
       <div class="feed" id="pea-funding-list" style="margin-top:12px"></div>
+    </div>
+    <div class="chart-pane" data-chart-pane="pea" data-pane="performance">
+      <div class="chart-wrap"><canvas id="peaPerfChart"></canvas></div>
+      <p class="traj-note" id="pea-perf-note"></p>
     </div>
     <div class="chart-pane" data-chart-pane="pea" data-pane="future">
       <div class="proj-controls">
@@ -1017,6 +1027,7 @@ function saveChartStyle(id) {
 }
 const chartStyles = {
   peaHist: loadChartStyle('peaHist'),
+  peaPerf: loadChartStyle('peaPerf'),
   peaProj: loadChartStyle('peaProj'),
   livret: loadChartStyle('livret'),
   livretProj: loadChartStyle('livretProj'),
@@ -1930,6 +1941,7 @@ function toggleFold(id) {
       }
       if (id === 'pea') {
         if (chartPaneMode.pea === 'future') drawPeaProjection();
+        else if (chartPaneMode.pea === 'performance') drawPeaPerformance();
         else drawPeaHistory();
       }
       if (id === 'livret') {
@@ -2795,6 +2807,7 @@ function setTabRange(group, id) {
     renderPeaSummary();
     renderPeaHoldings();
     if (chartPaneMode.pea === 'existing') drawPeaHistory();
+    else if (chartPaneMode.pea === 'performance') drawPeaPerformance();
   }
   if (group === 'livret') {
     renderLivretPanel();
@@ -2832,6 +2845,7 @@ function setChartPane(group, mode, persist = true) {
     }
     if (group === 'pea') {
       if (mode === 'existing') drawPeaHistory();
+      else if (mode === 'performance') drawPeaPerformance();
       else { syncProjControlsUI(); drawPeaProjection(); }
     }
     if (group === 'livret') {
@@ -2876,6 +2890,7 @@ function setTab(id, persist = true, { scroll = false } = {}) {
     if (id === 'pea') {
       syncProjControlsUI();
       if (chartPaneMode.pea === 'future') drawPeaProjection();
+      else if (chartPaneMode.pea === 'performance') drawPeaPerformance();
       else drawPeaHistory();
     }
     if (id === 'livret') {
@@ -3019,6 +3034,7 @@ function renderPeaSummary() {
   const windowDelta = then != null ? Math.round(now - then) : null;
   const vsCost = cost > 0 ? Math.round(now - cost) : null;
   const vsCostPct = cost > 0 ? ((now - cost) / cost) * 100 : null;
+  const windowReturn = peaWindowReturnPct(cut ? cut.getTime() : null);
   const winLabel = winId === 'Max' ? 'all time' : winId;
   const synced = formatPeaSyncedAt();
   const bits = [
@@ -3028,6 +3044,13 @@ function renderPeaSummary() {
     bits.push(
       `<span class="pea-sum-meta" title="${synced.absolute}">Last synced ` +
       `<strong>${synced.relative}</strong> · ${synced.absolute}</span>`
+    );
+  }
+  if (windowReturn != null) {
+    const cls = windowReturn > 0 ? 'pos' : (windowReturn < 0 ? 'neg' : '');
+    bits.push(
+      `<span class="pea-sum-meta">${winLabel} return ` +
+      `<strong class="blur-val ${cls}">${fmtPctSigned(windowReturn)}</strong></span>`
     );
   }
   if (windowDelta != null) {
@@ -3121,6 +3144,7 @@ function onChartStyleChange(id) {
   saveChartStyle(id);
   syncChartStyleUI(id);
   if (id === 'peaHist') drawPeaHistory();
+  else if (id === 'peaPerf') drawPeaPerformance();
   else if (id === 'peaProj') drawPeaProjection();
   else if (id === 'livret') drawLivretChart();
   else if (id === 'livretProj') drawLivretProjection();
@@ -3630,6 +3654,146 @@ function buildContributionSeries() {
   return points;
 }
 
+function fmtPctSigned(pct, digits = 1) {
+  if (pct == null || !isFinite(pct)) return 'n/a';
+  const sign = pct >= 0 ? '+' : '−';
+  return `${sign}${Math.abs(pct).toFixed(digits)}%`;
+}
+
+/** Dated PEA cash flows (versements) for return math. */
+function peaContributionEvents() {
+  return (STATE.peaContributions || [])
+    .filter(c => c.date && c.amount != null)
+    .map(c => ({ date: parseWalletDate(c.date), amount: +c.amount, label: c.label || '' }))
+    .filter(c => c.date && !isNaN(+c.date) && c.amount !== 0)
+    .sort((a, b) => +a.date - +b.date);
+}
+
+function peaFundedAtOrBefore(atMs) {
+  let sum = 0;
+  for (const c of peaContributionEvents()) {
+    if (+c.date > atMs) break;
+    sum += c.amount;
+  }
+  return sum;
+}
+
+/**
+ * True PEA valuations only — never the funded×multiple approx (that flattens return %).
+ * Seeds account open as cash = first versement, then nw-log pea snapshots + live.
+ */
+function peaTrueValuations() {
+  const byDay = new Map();
+  const rank = { open: 0, log: 1, live: 2 };
+  function put(date, value, source) {
+    if (!(value > 0) || !date || isNaN(+date)) return;
+    const day = new Date(date);
+    day.setHours(0, 0, 0, 0);
+    const at = day.getTime();
+    const prev = byDay.get(at);
+    if (prev && (rank[prev.source] || 0) > (rank[source] || 0)) return;
+    byDay.set(at, { date: day, at, value: Math.round(value), source });
+  }
+  const contribs = peaContributionEvents();
+  if (contribs.length) put(contribs[0].date, contribs[0].amount, 'open');
+  readNwLog().forEach(e => {
+    if (e && e.pea > 0 && e.at) put(e.at, e.pea, 'log');
+  });
+  if (STATE.pea > 0) put(new Date(), STATE.pea, 'live');
+  return [...byDay.values()].sort((a, b) => a.at - b.at);
+}
+
+/** Modified Dietz between two valuations; flows in (t0, t1]. */
+function modifiedDietzReturn(v0, t0, v1, t1, flows) {
+  const span = t1 - t0;
+  if (!(span > 0) || !(v0 > 0)) return null;
+  let cf = 0;
+  let wcf = 0;
+  for (const f of flows) {
+    const t = +f.date;
+    if (t <= t0 || t > t1) continue;
+    cf += f.amount;
+    wcf += f.amount * ((t1 - t) / span);
+  }
+  const denom = v0 + wcf;
+  if (!(Math.abs(denom) > 1e-6)) return null;
+  return (v1 - v0 - cf) / denom;
+}
+
+/**
+ * Bourso-style plus-value % curve: (value − funded) / funded at each true valuation.
+ * Skips the funded×multiple approx (that would paint a flat line at today’s multiple).
+ * Optional cut keeps the last pre-window point so the line enters the range cleanly.
+ */
+function buildPeaPerformanceSeries(cutMs = null) {
+  const vals = peaTrueValuations();
+  const flows = peaContributionEvents();
+  const all = [];
+  for (let i = 0; i < vals.length; i++) {
+    const v = vals[i];
+    let funded = peaFundedAtOrBefore(v.at);
+    if (v.source === 'live' && STATE.monthlyCostBasis > 0) funded = STATE.monthlyCostBasis;
+    if (!(funded > 0)) continue;
+    const vsInvestedPct = ((v.value - funded) / funded) * 100;
+    let periodPct = null;
+    if (i > 0) {
+      const prev = vals[i - 1];
+      const r = modifiedDietzReturn(prev.value, prev.at, v.value, v.at, flows);
+      if (r != null && isFinite(r)) periodPct = r * 100;
+    }
+    all.push({
+      date: v.date,
+      at: v.at,
+      returnPct: vsInvestedPct,
+      periodPct,
+      value: v.value,
+      funded,
+      vsInvestedPct,
+      source: v.source,
+    });
+  }
+  if (!cutMs || all.length < 2) return all;
+
+  let start = null;
+  const after = [];
+  for (const p of all) {
+    if (p.at <= cutMs) start = p;
+    if (p.at >= cutMs) after.push(p);
+  }
+  const out = [];
+  if (start) out.push(start);
+  for (const p of after) {
+    if (!out.length || out[out.length - 1].at !== p.at) out.push(p);
+  }
+  return out;
+}
+
+/**
+ * Window portfolio return via Modified Dietz when both ends are real valuations.
+ * If the only start is the tiny open-cash seed, fall back to lifetime vs invested
+ * so a €10 opening balance doesn’t explode the %.
+ */
+function peaWindowReturnPct(cutMs = null) {
+  const vals = peaTrueValuations();
+  if (vals.length < 2) return null;
+  let start = vals[0];
+  if (cutMs) {
+    for (const v of vals) {
+      if (v.at <= cutMs) start = v;
+    }
+  }
+  const end = vals[vals.length - 1];
+  if (end.at <= start.at) return null;
+  const funded = (end.source === 'live' && STATE.monthlyCostBasis > 0)
+    ? STATE.monthlyCostBasis
+    : peaFundedAtOrBefore(end.at);
+  if (start.source === 'open' && start.value < Math.max(100, end.value * 0.05)) {
+    return funded > 0 ? ((end.value - funded) / funded) * 100 : null;
+  }
+  const r = modifiedDietzReturn(start.value, start.at, end.value, end.at, peaContributionEvents());
+  return r != null && isFinite(r) ? r * 100 : null;
+}
+
 function projectPea(years, annualRate, monthly) {
   const mo = monthly != null ? monthly : (STATE.peaMonthly > 0 ? STATE.peaMonthly : 700);
   const r = annualRate / 12;
@@ -3762,6 +3926,139 @@ function drawPeaHistory() {
   }
 }
 
+function drawPeaPerformance() {
+  const canvas = document.getElementById('peaPerfChart');
+  if (!canvas) return;
+  if (charts.peaPerf) { charts.peaPerf.destroy(); delete charts.peaPerf; }
+
+  const cut = rangeCutoff('pea');
+  const series = buildPeaPerformanceSeries(cut ? cut.getTime() : null);
+  const note = document.getElementById('pea-perf-note');
+  const winId = tabRange.pea || '1Y';
+  const winLabel = winId === 'Max' ? 'all time' : winId;
+
+  if (series.length < 2) {
+    if (note) {
+      const cost = STATE.monthlyCostBasis || 0;
+      const now = STATE.pea || 0;
+      const vs = cost > 0 ? ((now - cost) / cost) * 100 : null;
+      note.textContent = vs != null
+        ? `Need another PEA sync to draw a path — lifetime vs invested is ${fmtPctSigned(vs)} today.`
+        : 'Need PEA valuations (open + at least one sync) to draw performance.';
+    }
+    charts.peaPerf = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: { labels: [], datasets: [] },
+      options: { plugins: { legend: { display: false } } },
+    });
+    return;
+  }
+
+  const curve = chartLineStyle('peaPerf', { allowStep: false });
+  const labels = series.map(p => p.date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }));
+  const returns = series.map(p => +p.returnPct.toFixed(2));
+  const end = series[series.length - 1];
+  const endCls = end.returnPct >= 0 ? 'pos' : 'neg';
+
+  charts.peaPerf = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'vs invested',
+          data: returns,
+          borderColor: '#e8c46a',
+          backgroundColor: 'rgba(232,196,106,0.12)',
+          borderWidth: 2.5,
+          pointRadius: series.map((_, i) => (i === 0 || i === series.length - 1 ? 5 : 3)),
+          pointHoverRadius: 7,
+          pointHitRadius: 16,
+          pointBackgroundColor: '#e8c46a',
+          pointBorderColor: '#0b1524',
+          pointBorderWidth: 1.5,
+          fill: true,
+          tension: curve.tension,
+          stepped: curve.stepped,
+          spanGaps: true,
+        },
+        {
+          label: '0%',
+          data: series.map(() => 0),
+          borderColor: 'rgba(139,154,171,0.55)',
+          borderWidth: 1.5,
+          borderDash: [6, 4],
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          fill: false,
+          order: 0,
+        },
+      ],
+    },
+    options: {
+      ...chartHoverOpts(),
+      plugins: {
+        legend: {
+          display: true,
+          labels: {
+            color: '#8b9aab',
+            font: { size: 11, family: 'Plus Jakarta Sans' },
+            boxWidth: 12,
+            filter(item) { return item.text !== '0%'; },
+          },
+        },
+        tooltip: {
+          enabled: true,
+          filter(item) { return item.datasetIndex === 0; },
+          callbacks: {
+            title(items) {
+              const i = items[0]?.dataIndex;
+              if (i == null || !series[i]) return '';
+              return series[i].date.toLocaleDateString('en-GB', {
+                weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
+              });
+            },
+            label(c) {
+              if (c.raw == null || anonMode) return anonMode ? 'Return: •••' : null;
+              const p = series[c.dataIndex];
+              const bits = [`Return ${fmtPctSigned(c.raw)}`];
+              if (p.periodPct != null && c.dataIndex > 0) bits.push(`period ${fmtPctSigned(p.periodPct)}`);
+              if (p.vsInvestedPct != null) bits.push(`vs invested ${fmtPctSigned(p.vsInvestedPct)}`);
+              if (p.value != null) bits.push(`value ${fmt(p.value)}`);
+              return bits.join(' · ');
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: '#8b9aab', font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 10 },
+          grid: { display: false },
+        },
+        y: {
+          ticks: {
+            callback: v => fmtPctSigned(v, Math.abs(v) >= 10 ? 0 : 1),
+            color: '#8b9aab',
+            font: { size: 10 },
+          },
+          grid: { color: 'rgba(126,160,211,0.08)' },
+        },
+      },
+    },
+  });
+
+  if (note) {
+    const nVal = peaTrueValuations().length;
+    const twr = peaWindowReturnPct(cut ? cut.getTime() : null);
+    const twrBit = twr != null
+      ? ` · ${winLabel} TWR <strong class="blur-val">${fmtPctSigned(twr)}</strong>`
+      : '';
+    note.innerHTML =
+      `<span class="${endCls}">vs invested <strong class="blur-val">${fmtPctSigned(end.returnPct)}</strong></span>` +
+      `${twrBit} · ${nVal} valuation${nVal === 1 ? '' : 's'} (open + Finary syncs) · curve densifies as snapshots accrue`;
+  }
+}
+
 function drawPeaProjection() {
   const canvas = document.getElementById('projChart');
   if (!canvas) return;
@@ -3868,7 +4165,8 @@ function drawPeaProjection() {
 function drawTrajectory() {
   drawNwHistory();
   drawNwProjection();
-  drawPeaHistory();
+  if (chartPaneMode.pea === 'performance') drawPeaPerformance();
+  else drawPeaHistory();
   drawPeaProjection();
   drawLivretChart();
   drawLivretProjection();
