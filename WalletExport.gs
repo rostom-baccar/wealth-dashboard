@@ -114,6 +114,15 @@ function extractSavingsStaging_(db, wallets) {
       break;
     }
   }
+  // Fallback: any wallet named LDDS (Savings profile) if account table missing/empty.
+  if (savingsId == null) {
+    (db['wallet'] || []).forEach(w => {
+      if (savingsId != null) return;
+      if (/ldds/i.test(String(w.name || '')) && w['account_id'] != null) {
+        savingsId = w['account_id'];
+      }
+    });
+  }
   if (savingsId == null) return null;
   const walletName = (id) => String(
     wallets[id] || wallets[+id] || wallets[String(id)] || ''
@@ -572,7 +581,8 @@ function parseSQLite(bytes) {
   }
 
   const result = {};
-  ['trans', 'category', 'wallet', 'budget', 'budgetCategory'].forEach(tbl => {
+  // `account` is required for Savings → LDDS staging (and Rostom spend scoping).
+  ['account', 'trans', 'category', 'wallet', 'budget', 'budgetCategory'].forEach(tbl => {
     const root = tableRoots[tbl];
     if (!root) return;
     const cols = tableColNames[tbl] || [];
