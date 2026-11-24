@@ -37,7 +37,11 @@ def resolve_spend_account_id(cur) -> int | None:
 
 
 def export_savings_staging(db_path: Path) -> dict | None:
-    """Savings profile → Bourso LDDS reserved (transfers into *LDDS* wallets)."""
+    """Savings → Bourso LDDS staging.
+
+    Active LDDS wallet: trust live balance (0 = cleared after PEA).
+    Inactive LDDS shells often keep amount=0 after transfers — use net transfers.
+    """
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -48,34 +52,50 @@ def export_savings_staging(db_path: Path) -> dict | None:
         conn.close()
         return None
     sid = int(savings["id"])
-    wallets = {r["id"]: r["name"] for r in cur.execute("SELECT id, name, amount, account_id FROM wallet")}
-    ldds = 0.0
+    wallets = {
+        r["id"]: r["name"]
+        for r in cur.execute("SELECT id, name FROM wallet")
+    }
+    into = 0.0
+    out = 0.0
     n = 0
-    live_ldds = None
     for t in cur.execute(
-        "SELECT amount, transfer_wallet_id FROM trans WHERE account_id = ? AND type = 2",
+        "SELECT amount, wallet_id, transfer_wallet_id FROM trans WHERE account_id = ? AND type = 2",
         (sid,),
     ):
+        amt = abs(t["amount"] or 0) / 100.0
+        from_name = wallets.get(t["wallet_id"]) or wallets.get(
+            int(t["wallet_id"]) if t["wallet_id"] is not None else None
+        ) or ""
         to_id = t["transfer_wallet_id"]
-        to_name = wallets.get(to_id) or wallets.get(int(to_id) if to_id is not None else None) or ""
-        if "ldds" not in str(to_name).lower():
-            continue
-        ldds += abs(t["amount"] or 0) / 100.0
-        n += 1
-    # Live LDDS wallet balance wins (including 0 after clearing the buffer)
+        to_name = wallets.get(to_id) or wallets.get(
+            int(to_id) if to_id is not None else None
+        ) or ""
+        if "ldds" in str(to_name).lower():
+            into += amt
+            n += 1
+        if "ldds" in str(from_name).lower():
+            out += amt
+            n += 1
+    from_transfers = round(into - out, 2)
+
+    live_ldds = None
+    live_active = False
     for r in cur.execute(
-        "SELECT name, amount FROM wallet WHERE account_id = ?", (sid,)
+        "SELECT name, amount, active FROM wallet WHERE account_id = ?", (sid,)
     ):
         if "ldds" in (r["name"] or "").lower():
             live_ldds = (r["amount"] or 0) / 100.0
-    if live_ldds is not None:
-        ldds = live_ldds
+            live_active = int(r["active"] or 0) == 1
     conn.close()
+    bourso = round(live_ldds, 2) if (live_ldds is not None and live_active) else from_transfers
     return {
         "profile": "Savings",
         "accountId": sid,
-        "boursoLdds": round(ldds, 2),
+        "boursoLdds": bourso,
         "transferCount": n,
+        "liveActive": live_active,
+        "liveLdds": live_ldds,
     }
 
 

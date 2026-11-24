@@ -100,7 +100,11 @@ function resolveSpendAccountId_(accounts) {
   return null;
 }
 
-/** Savings profile → Bourso LDDS staging (sum of transfers into *LDDS* wallets). */
+/**
+ * Savings profile → Bourso LDDS staging.
+ * Prefer the live LDDS wallet balance when that wallet is active (0 = cleared after PEA).
+ * Inactive LDDS shells often stay at amount=0 after transfers — then use net transfers in − out.
+ */
 function extractSavingsStaging_(db, wallets) {
   const accounts = db['account'] || [];
   let savingsId = null;
@@ -114,30 +118,41 @@ function extractSavingsStaging_(db, wallets) {
   const walletName = (id) => String(
     wallets[id] || wallets[+id] || wallets[String(id)] || ''
   );
-  let ldds = 0;
+  let into = 0;
+  let out = 0;
   let n = 0;
-  let liveLdds = null;
   (db['trans'] || []).forEach(t => {
     // SQLite parser may yield string ids — coerce before comparing.
     if (+t['account_id'] !== +savingsId) return;
     if (+t['type'] !== 2) return; // transfers only
+    const fromName = walletName(t['wallet_id']);
     const toName = walletName(t['transfer_wallet_id']);
-    if (!/ldds/i.test(toName)) return;
-    ldds += Math.abs(+t['amount'] || 0) / 100.0;
-    n++;
+    const amt = Math.abs(+t['amount'] || 0) / 100.0;
+    if (/ldds/i.test(toName)) { into += amt; n++; }
+    if (/ldds/i.test(fromName)) { out += amt; n++; }
   });
-  // Live LDDS wallet balance wins (including 0 after you clear the buffer)
+  const fromTransfers = Math.round((into - out) * 100) / 100;
+
+  let liveLdds = null;
+  let liveActive = false;
   (db['wallet'] || []).forEach(w => {
     if (+w['account_id'] !== +savingsId) return;
     if (!/ldds/i.test(String(w.name || ''))) return;
     liveLdds = (+w.amount || 0) / 100.0;
+    liveActive = +w.active === 1;
   });
-  if (liveLdds != null) ldds = liveLdds;
+
+  const boursoLdds = (liveLdds != null && liveActive)
+    ? Math.round(liveLdds * 100) / 100
+    : fromTransfers;
+
   return {
     profile: 'Savings',
     accountId: savingsId,
-    boursoLdds: Math.round(ldds * 100) / 100,
+    boursoLdds: boursoLdds,
     transferCount: n,
+    liveActive: liveActive,
+    liveLdds: liveLdds,
   };
 }
 
