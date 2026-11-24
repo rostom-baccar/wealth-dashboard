@@ -116,6 +116,7 @@ function extractSavingsStaging_(db, wallets) {
   );
   let ldds = 0;
   let n = 0;
+  let liveLdds = null;
   (db['trans'] || []).forEach(t => {
     // SQLite parser may yield string ids — coerce before comparing.
     if (+t['account_id'] !== +savingsId) return;
@@ -125,13 +126,13 @@ function extractSavingsStaging_(db, wallets) {
     ldds += Math.abs(+t['amount'] || 0) / 100.0;
     n++;
   });
-  // Prefer live wallet balance when Money Manager has one
+  // Live LDDS wallet balance wins (including 0 after you clear the buffer)
   (db['wallet'] || []).forEach(w => {
     if (+w['account_id'] !== +savingsId) return;
     if (!/ldds/i.test(String(w.name || ''))) return;
-    const bal = (+w.amount || 0) / 100.0;
-    if (bal > 0) ldds = bal;
+    liveLdds = (+w.amount || 0) / 100.0;
   });
+  if (liveLdds != null) ldds = liveLdds;
   return {
     profile: 'Savings',
     accountId: savingsId,

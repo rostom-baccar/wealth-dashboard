@@ -51,6 +51,7 @@ def export_savings_staging(db_path: Path) -> dict | None:
     wallets = {r["id"]: r["name"] for r in cur.execute("SELECT id, name, amount, account_id FROM wallet")}
     ldds = 0.0
     n = 0
+    live_ldds = None
     for t in cur.execute(
         "SELECT amount, transfer_wallet_id FROM trans WHERE account_id = ? AND type = 2",
         (sid,),
@@ -61,11 +62,14 @@ def export_savings_staging(db_path: Path) -> dict | None:
             continue
         ldds += abs(t["amount"] or 0) / 100.0
         n += 1
+    # Live LDDS wallet balance wins (including 0 after clearing the buffer)
     for r in cur.execute(
         "SELECT name, amount FROM wallet WHERE account_id = ?", (sid,)
     ):
-        if "ldds" in (r["name"] or "").lower() and (r["amount"] or 0) > 0:
-            ldds = (r["amount"] or 0) / 100.0
+        if "ldds" in (r["name"] or "").lower():
+            live_ldds = (r["amount"] or 0) / 100.0
+    if live_ldds is not None:
+        ldds = live_ldds
     conn.close()
     return {
         "profile": "Savings",
