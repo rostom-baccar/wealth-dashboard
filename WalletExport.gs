@@ -236,19 +236,25 @@ function writeJsonSnapshot(rows, budgets, savings) {
   // Staging is Money Manager only — drop any boursoLdds copied from finary-balances
   delete snapshot.balances.boursoLdds;
   delete snapshot.balances.boursoLddsSource;
+  delete snapshot.savingsProfile;
 
-  // Staging always comes from the live Money Manager SQLite (after Finary merge)
-  if (savings && savings.boursoLdds != null) {
-    snapshot.balances.boursoLdds = savings.boursoLdds;
+  // Staging always comes from the live Money Manager SQLite (after Finary merge).
+  // Always write the key (including 0) so the dashboard cannot keep a stale Settings value.
+  if (savings && savings.boursoLdds != null && isFinite(+savings.boursoLdds)) {
+    snapshot.balances.boursoLdds = +savings.boursoLdds;
     snapshot.balances.boursoLddsSource = 'money-manager:Savings';
     snapshot.savingsProfile = savings;
-  } else if (prev && prev.savingsProfile && prev.savingsProfile.boursoLdds != null) {
+  } else if (prev && prev.savingsProfile && prev.savingsProfile.boursoLdds != null
+      && isFinite(+prev.savingsProfile.boursoLdds)) {
     // Only keep prior staging when live extract failed entirely (not when cleared to 0)
     snapshot.savingsProfile = prev.savingsProfile;
-    snapshot.balances.boursoLdds = prev.savingsProfile.boursoLdds;
+    snapshot.balances.boursoLdds = +prev.savingsProfile.boursoLdds;
     snapshot.balances.boursoLddsSource = prev.balances && prev.balances.boursoLddsSource
       ? prev.balances.boursoLddsSource
       : 'money-manager:Savings';
+  } else {
+    snapshot.balances.boursoLdds = null;
+    snapshot.balances.boursoLddsSource = null;
   }
 
   snapshot.refreshMeta = {

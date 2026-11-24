@@ -1390,14 +1390,22 @@ function applySnapshotData(data, { live = false } = {}) {
   STATE.lastSnapshotSync = data.lastSync || data.servedAt || null;
   STATE.refreshMeta = data.refreshMeta || null;
   if (data.balances) applyBalancesPayload(data.balances, { live });
-  // Money Manager Savings → LDDS staging (may be top-level even when balances omitted it)
+  // Money Manager Savings → LDDS staging. On live Refresh, always apply snapshot staging
+  // (including 0/null) so a stale Settings/localStorage value like €900 cannot stick.
   const savingsLdds = data.savingsProfile && data.savingsProfile.boursoLdds;
+  const metaLdds = data.refreshMeta && Object.prototype.hasOwnProperty.call(data.refreshMeta, 'boursoLdds')
+    ? data.refreshMeta.boursoLdds
+    : undefined;
+  const balHasLdds = data.balances && Object.prototype.hasOwnProperty.call(data.balances, 'boursoLdds');
   if (savingsLdds != null && isFinite(+savingsLdds)) {
     STATE.boursoLdds = +savingsLdds;
     try { persistBalancesState(); } catch (_) {}
-  } else if (live && data.balances && Object.prototype.hasOwnProperty.call(data.balances, 'boursoLdds')
-    && data.balances.boursoLdds == null) {
-    STATE.boursoLdds = null;
+  } else if (live && metaLdds !== undefined) {
+    STATE.boursoLdds = metaLdds == null || metaLdds === '' || !isFinite(+metaLdds) ? null : +metaLdds;
+    try { persistBalancesState(); } catch (_) {}
+  } else if (live && balHasLdds) {
+    const v = data.balances.boursoLdds;
+    STATE.boursoLdds = v == null || v === '' || !isFinite(+v) ? null : +v;
     try { persistBalancesState(); } catch (_) {}
   }
   if (Array.isArray(data.budgets) && data.budgets.length) {
