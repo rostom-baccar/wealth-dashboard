@@ -92,7 +92,8 @@ def export_savings_staging(db_path: Path) -> dict | None:
         "SELECT type, amount, wallet_id, transfer_wallet_id FROM trans WHERE account_id = ?",
         (sid,),
     ):
-        typ = int(t["type"] or -1)
+        # type 0 = income — must not use `or -1` (0 is falsy in Python).
+        typ = int(t["type"]) if t["type"] is not None else -1
         amt = abs(t["amount"] or 0) / 100.0
         wid = t["wallet_id"]
         try:
