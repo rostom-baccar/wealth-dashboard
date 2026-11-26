@@ -166,18 +166,22 @@ function extractSavingsStaging_(db, wallets) {
   let into = 0;
   let out = 0;
   let transferCount = 0;
+  const ieEvents = [];
+  const xferEvents = [];
 
   (db['trans'] || []).forEach(t => {
     if (+t['account_id'] !== +savingsId) return;
     const typ = +t['type'];
     const amtCents = +t['amount'] || 0;
     const amt = Math.abs(amtCents) / 100.0;
+    const ts = +t['date_time'] || 0;
 
     // Income (0) / expense (1) booked on Boursobank CC or LDDS.
     if (typ === 0 || typ === 1) {
       if (!isStagingWallet(t['wallet_id'])) return;
       if (typ === 0) { incomeTotal += amt; incomeCount++; }
       else { expenseTotal += amt; expenseCount++; }
+      ieEvents.push({ ts: ts, delta: typ === 0 ? amt : -amt, kind: typ === 0 ? 'in' : 'out' });
       return;
     }
 
@@ -185,8 +189,10 @@ function extractSavingsStaging_(db, wallets) {
     if (typ !== 2) return;
     const fromName = walletName(t['wallet_id']);
     const toName = walletName(t['transfer_wallet_id']);
-    if (isStagingName(toName)) { into += amt; transferCount++; }
-    if (isStagingName(fromName)) { out += amt; transferCount++; }
+    let delta = 0;
+    if (isStagingName(toName)) { into += amt; transferCount++; delta += amt; }
+    if (isStagingName(fromName)) { out += amt; transferCount++; delta -= amt; }
+    if (delta !== 0) xferEvents.push({ ts: ts, delta: delta, kind: delta > 0 ? 'in' : 'out' });
   });
 
   incomeTotal = Math.round(incomeTotal * 100) / 100;
@@ -203,6 +209,19 @@ function extractSavingsStaging_(db, wallets) {
     ? Math.round(liveLdds * 100) / 100
     : ledger;
 
+  // Running balance for sparkline (income/expense preferred; else transfers).
+  const histSrc = (hasIncomeExpense ? ieEvents : xferEvents).slice().sort(function (a, b) {
+    return a.ts - b.ts;
+  });
+  let run = 0;
+  const history = histSrc.map(function (e) {
+    run = Math.round((run + e.delta) * 100) / 100;
+    const iso = e.ts
+      ? Utilities.formatDate(new Date(e.ts), 'Europe/Paris', "yyyy-MM-dd'T'HH:mm:ss")
+      : null;
+    return { date: iso, balance: run, delta: Math.round(e.delta * 100) / 100, kind: e.kind };
+  });
+
   return {
     profile: 'Savings',
     accountId: savingsId,
@@ -216,6 +235,7 @@ function extractSavingsStaging_(db, wallets) {
     transferCount: transferCount,
     liveActive: liveActive,
     liveLdds: liveLdds,
+    history: history,
   };
 }
 

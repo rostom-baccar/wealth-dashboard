@@ -88,13 +88,17 @@ def export_savings_staging(db_path: Path) -> dict | None:
     into = 0.0
     out = 0.0
     transfer_count = 0
+    ie_events: list[dict] = []
+    xfer_events: list[dict] = []
     for t in cur.execute(
-        "SELECT type, amount, wallet_id, transfer_wallet_id FROM trans WHERE account_id = ?",
+        "SELECT type, amount, wallet_id, transfer_wallet_id, date_time "
+        "FROM trans WHERE account_id = ?",
         (sid,),
     ):
         # type 0 = income — must not use `or -1` (0 is falsy in Python).
         typ = int(t["type"]) if t["type"] is not None else -1
         amt = abs(t["amount"] or 0) / 100.0
+        ts = int(t["date_time"] or 0)
         wid = t["wallet_id"]
         try:
             wid_i = int(wid) if wid is not None else None
@@ -107,9 +111,11 @@ def export_savings_staging(db_path: Path) -> dict | None:
             if typ == 0:
                 income_total += amt
                 income_count += 1
+                ie_events.append({"ts": ts, "delta": amt, "kind": "in"})
             else:
                 expense_total += amt
                 expense_count += 1
+                ie_events.append({"ts": ts, "delta": -amt, "kind": "out"})
             continue
 
         if typ != 2:
@@ -121,12 +127,19 @@ def export_savings_staging(db_path: Path) -> dict | None:
         except (TypeError, ValueError):
             to_i = None
         to_name = wallets.get(to_id) or wallets.get(to_i) or ""
+        delta = 0.0
         if is_staging_name(str(to_name)):
             into += amt
             transfer_count += 1
+            delta += amt
         if is_staging_name(str(from_name)):
             out += amt
             transfer_count += 1
+            delta -= amt
+        if delta:
+            xfer_events.append(
+                {"ts": ts, "delta": delta, "kind": "in" if delta > 0 else "out"}
+            )
 
     conn.close()
     income_total = round(income_total, 2)
@@ -145,6 +158,33 @@ def export_savings_staging(db_path: Path) -> dict | None:
         mode = "transfers"
         bourso = from_transfers
 
+    from datetime import datetime, timezone
+    try:
+        from zoneinfo import ZoneInfo
+        paris = ZoneInfo("Europe/Paris")
+    except Exception:
+        paris = timezone.utc
+    hist_src = sorted(ie_events if has_ie else xfer_events, key=lambda e: e["ts"])
+    run = 0.0
+    history = []
+    for e in hist_src:
+        run = round(run + e["delta"], 2)
+        iso = None
+        if e["ts"]:
+            iso = (
+                datetime.fromtimestamp(e["ts"] / 1000.0, tz=timezone.utc)
+                .astimezone(paris)
+                .strftime("%Y-%m-%dT%H:%M:%S")
+            )
+        history.append(
+            {
+                "date": iso,
+                "balance": run,
+                "delta": round(e["delta"], 2),
+                "kind": e["kind"],
+            }
+        )
+
     return {
         "profile": "Savings",
         "accountId": sid,
@@ -158,6 +198,7 @@ def export_savings_staging(db_path: Path) -> dict | None:
         "transferCount": transfer_count,
         "liveActive": live_active,
         "liveLdds": live_ldds,
+        "history": history,
     }
 
 
