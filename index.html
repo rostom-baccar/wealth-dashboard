@@ -1974,6 +1974,7 @@ function toggleFold(id) {
         if (chartPaneMode.livret === 'future') drawLivretProjection();
         else drawLivretChart();
       }
+      if (id === 'staging') redrawStagingSpark();
       if (id === 'hero-perf') drawPerfHistory();
     });
   }
@@ -2924,6 +2925,7 @@ function setTab(id, persist = true, { scroll = false } = {}) {
       if (chartPaneMode.livret === 'future') drawLivretProjection();
       else drawLivretChart();
     }
+    if (id === 'staging') redrawStagingSpark();
   });
 }
 
@@ -3132,12 +3134,24 @@ function renderLivretPanel() {
     ? wd.map(w => `<div class="feed-item"><div><div class="feed-cat">Withdrawal</div><div class="feed-meta">${w.date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} · bal ${fmt(w.balance)}</div></div><div class="feed-amt exp blur-val">−${fmt(w.amount)}</div></div>`).join('')
     : '<p class="muted">No withdrawals in this window.</p>';
 }
+function parseStagingHistDate(raw) {
+  if (!raw) return null;
+  // Apps Script emits local Paris wall time without offset — append Z-less parse as local,
+  // and accept ISO with offset. Avoid Invalid Date on picky engines.
+  const s = String(raw).trim();
+  let d = new Date(s);
+  if (!isNaN(+d)) return d;
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return null;
+  return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+}
+
 function stagingHistoryPoints(sp, available) {
   const hist = Array.isArray(sp && sp.history) ? sp.history : [];
   const pts = hist
     .filter(p => p && isFinite(+p.balance))
     .map(p => ({
-      t: p.date ? new Date(p.date) : null,
+      t: parseStagingHistDate(p.date),
       v: +p.balance,
       kind: p.kind || null,
     }));
@@ -3179,6 +3193,22 @@ function stagingRingSvg(withdrawn, cap) {
       `transform="rotate(-90 36 36)"/>` +
       `</svg>`,
   };
+}
+
+function redrawStagingSpark() {
+  const panel = document.getElementById('panel-staging');
+  if (panel && !panel.classList.contains('on')) return;
+  const canvas = document.getElementById('stagingSparkChart');
+  if (!canvas || canvas.clientWidth < 8) {
+    // Tab/fold not laid out yet — try once more on next frame.
+    requestAnimationFrame(() => {
+      const c = document.getElementById('stagingSparkChart');
+      if (!c || c.clientWidth < 8) return;
+      drawStagingSpark(stagingHistoryPoints(STATE.savingsProfile || {}, STATE.boursoLdds));
+    });
+    return;
+  }
+  drawStagingSpark(stagingHistoryPoints(STATE.savingsProfile || {}, STATE.boursoLdds));
 }
 
 function drawStagingSpark(points) {
@@ -3235,6 +3265,9 @@ function drawStagingSpark(points) {
       animation: { duration: 280 },
     },
   });
+  requestAnimationFrame(() => {
+    try { charts.stagingSpark?.resize?.(); } catch (_) {}
+  });
 }
 
 function renderStaging() {
@@ -3287,8 +3320,7 @@ function renderStaging() {
     `</div>` +
     `<p class="traj-note" style="margin-top:12px">${v < cap ? `−${fmt(shrink)} to target` : 'At / above target'}` +
     `${modeNote ? ` · ${modeNote}` : ''}</p>`;
-  const pts = stagingHistoryPoints(sp, v);
-  requestAnimationFrame(() => drawStagingSpark(pts));
+  requestAnimationFrame(() => redrawStagingSpark());
 }
 function syncChartStyleUI(id) {
   const ids = id ? [id] : Object.keys(chartStyles);
