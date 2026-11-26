@@ -140,18 +140,24 @@ function extractSavingsStaging_(db, wallets) {
   const walletName = (id) => String(
     wallets[id] || wallets[+id] || wallets[String(id)] || ''
   );
-  const lddsIds = {};
+  // Staging wallets under Savings: Boursobank LDDS (preferred) and Boursobank CC
+  // (Money Manager often books staging income/expense on CC).
+  const stagingIds = {};
   let liveLdds = null;
   let liveActive = false;
   (db['wallet'] || []).forEach(w => {
     if (+w['account_id'] !== +savingsId) return;
-    if (!/ldds/i.test(String(w.name || ''))) return;
-    lddsIds[+w.id] = 1;
-    if (!isNaN(+w.id)) lddsIds[String(w.id)] = 1;
-    liveLdds = (+w.amount || 0) / 100.0;
-    liveActive = +w.active === 1;
+    const name = String(w.name || '');
+    if (!/boursobank|ldds/i.test(name)) return;
+    stagingIds[+w.id] = 1;
+    if (!isNaN(+w.id)) stagingIds[String(w.id)] = 1;
+    if (/ldds/i.test(name)) {
+      liveLdds = (+w.amount || 0) / 100.0;
+      liveActive = +w.active === 1;
+    }
   });
-  const isLddsWallet = (id) => !!(lddsIds[+id] || lddsIds[String(id)]);
+  const isStagingWallet = (id) => !!(stagingIds[+id] || stagingIds[String(id)]);
+  const isStagingName = (name) => /boursobank|ldds/i.test(String(name || ''));
 
   let incomeTotal = 0;
   let expenseTotal = 0;
@@ -167,20 +173,20 @@ function extractSavingsStaging_(db, wallets) {
     const amtCents = +t['amount'] || 0;
     const amt = Math.abs(amtCents) / 100.0;
 
-    // Income (0) / expense (1) booked directly on the LDDS wallet.
+    // Income (0) / expense (1) booked on Boursobank CC or LDDS.
     if (typ === 0 || typ === 1) {
-      if (!isLddsWallet(t['wallet_id'])) return;
+      if (!isStagingWallet(t['wallet_id'])) return;
       if (typ === 0) { incomeTotal += amt; incomeCount++; }
       else { expenseTotal += amt; expenseCount++; }
       return;
     }
 
-    // Legacy transfers involving LDDS.
+    // Legacy transfers involving Boursobank / LDDS.
     if (typ !== 2) return;
     const fromName = walletName(t['wallet_id']);
     const toName = walletName(t['transfer_wallet_id']);
-    if (/ldds/i.test(toName)) { into += amt; transferCount++; }
-    if (/ldds/i.test(fromName)) { out += amt; transferCount++; }
+    if (isStagingName(toName)) { into += amt; transferCount++; }
+    if (isStagingName(fromName)) { out += amt; transferCount++; }
   });
 
   incomeTotal = Math.round(incomeTotal * 100) / 100;

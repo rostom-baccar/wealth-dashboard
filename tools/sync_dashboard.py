@@ -61,14 +61,23 @@ def export_savings_staging(db_path: Path) -> dict | None:
         r["id"]: r["name"]
         for r in cur.execute("SELECT id, name FROM wallet")
     }
-    ldds_ids: set[int] = set()
+    # Staging wallets: Boursobank LDDS (preferred) + Boursobank CC (often used in MM).
+    staging_ids: set[int] = set()
     live_ldds = None
     live_active = False
+
+    def is_staging_name(name: str) -> bool:
+        n = (name or "").lower()
+        return "boursobank" in n or "ldds" in n
+
     for r in cur.execute(
         "SELECT id, name, amount, active FROM wallet WHERE account_id = ?", (sid,)
     ):
-        if "ldds" in (r["name"] or "").lower():
-            ldds_ids.add(int(r["id"]))
+        name = r["name"] or ""
+        if not is_staging_name(name):
+            continue
+        staging_ids.add(int(r["id"]))
+        if "ldds" in name.lower():
             live_ldds = (r["amount"] or 0) / 100.0
             live_active = int(r["active"] or 0) == 1
 
@@ -92,7 +101,7 @@ def export_savings_staging(db_path: Path) -> dict | None:
             wid_i = None
 
         if typ in (0, 1):
-            if wid_i not in ldds_ids:
+            if wid_i not in staging_ids:
                 continue
             if typ == 0:
                 income_total += amt
@@ -111,10 +120,10 @@ def export_savings_staging(db_path: Path) -> dict | None:
         except (TypeError, ValueError):
             to_i = None
         to_name = wallets.get(to_id) or wallets.get(to_i) or ""
-        if "ldds" in str(to_name).lower():
+        if is_staging_name(str(to_name)):
             into += amt
             transfer_count += 1
-        if "ldds" in str(from_name).lower():
+        if is_staging_name(str(from_name)):
             out += amt
             transfer_count += 1
 
