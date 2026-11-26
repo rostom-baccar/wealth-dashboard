@@ -519,7 +519,6 @@ body.anon .hero-amount{filter:blur(18px)!important;opacity:.1!important}
 .fg-row .fg-val.neg{color:var(--bad)}
 .fg-gap{display:none}
 .staging-viz{margin-top:14px;display:flex;flex-direction:column;gap:12px}
-.staging-spark.chart-wrap{height:72px;padding:6px 4px;margin:0;border:1px solid var(--line);border-radius:var(--radius);background:rgba(16,28,44,.55)}
 .staging-deploy{
   display:flex;align-items:center;gap:14px;
   padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius);
@@ -1974,7 +1973,6 @@ function toggleFold(id) {
         if (chartPaneMode.livret === 'future') drawLivretProjection();
         else drawLivretChart();
       }
-      if (id === 'staging') redrawStagingSpark();
       if (id === 'hero-perf') drawPerfHistory();
     });
   }
@@ -2925,7 +2923,6 @@ function setTab(id, persist = true, { scroll = false } = {}) {
       if (chartPaneMode.livret === 'future') drawLivretProjection();
       else drawLivretChart();
     }
-    if (id === 'staging') redrawStagingSpark();
   });
 }
 
@@ -3134,45 +3131,6 @@ function renderLivretPanel() {
     ? wd.map(w => `<div class="feed-item"><div><div class="feed-cat">Withdrawal</div><div class="feed-meta">${w.date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} · bal ${fmt(w.balance)}</div></div><div class="feed-amt exp blur-val">−${fmt(w.amount)}</div></div>`).join('')
     : '<p class="muted">No withdrawals in this window.</p>';
 }
-function parseStagingHistDate(raw) {
-  if (!raw) return null;
-  // Apps Script emits local Paris wall time without offset — append Z-less parse as local,
-  // and accept ISO with offset. Avoid Invalid Date on picky engines.
-  const s = String(raw).trim();
-  let d = new Date(s);
-  if (!isNaN(+d)) return d;
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
-  if (!m) return null;
-  return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
-}
-
-function stagingHistoryPoints(sp, available) {
-  const hist = Array.isArray(sp && sp.history) ? sp.history : [];
-  const pts = hist
-    .filter(p => p && isFinite(+p.balance))
-    .map(p => ({
-      t: parseStagingHistDate(p.date),
-      v: +p.balance,
-      kind: p.kind || null,
-    }));
-  if (pts.length === 1) {
-    // Seed a zero so a single fund/withdraw still draws a short line.
-    const only = pts[0];
-    const t0 = only.t && !isNaN(+only.t) ? new Date(+only.t - 86400000) : new Date(Date.now() - 86400000);
-    return [{ t: t0, v: 0, kind: null }, only];
-  }
-  if (pts.length) return pts;
-  // Old snapshot without history — flat line at current available.
-  if (available != null && isFinite(+available)) {
-    const now = new Date();
-    return [
-      { t: new Date(+now - 7 * 86400000), v: +available, kind: null },
-      { t: now, v: +available, kind: null },
-    ];
-  }
-  return [];
-}
-
 function stagingRingSvg(withdrawn, cap) {
   const c = Math.max(0, +cap || 0);
   const w = Math.max(0, +withdrawn || 0);
@@ -3195,81 +3153,6 @@ function stagingRingSvg(withdrawn, cap) {
   };
 }
 
-function redrawStagingSpark() {
-  const panel = document.getElementById('panel-staging');
-  if (panel && !panel.classList.contains('on')) return;
-  const canvas = document.getElementById('stagingSparkChart');
-  if (!canvas || canvas.clientWidth < 8) {
-    // Tab/fold not laid out yet — try once more on next frame.
-    requestAnimationFrame(() => {
-      const c = document.getElementById('stagingSparkChart');
-      if (!c || c.clientWidth < 8) return;
-      drawStagingSpark(stagingHistoryPoints(STATE.savingsProfile || {}, STATE.boursoLdds));
-    });
-    return;
-  }
-  drawStagingSpark(stagingHistoryPoints(STATE.savingsProfile || {}, STATE.boursoLdds));
-}
-
-function drawStagingSpark(points) {
-  const canvas = document.getElementById('stagingSparkChart');
-  if (!canvas || typeof Chart === 'undefined') return;
-  try { charts.stagingSpark?.destroy?.(); } catch (_) {}
-  delete charts.stagingSpark;
-  if (!points.length) return;
-  const labels = points.map((p, i) => {
-    if (p.t && !isNaN(+p.t)) {
-      return p.t.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-    }
-    return String(i + 1);
-  });
-  const data = points.map(p => p.v);
-  charts.stagingSpark = new Chart(canvas.getContext('2d'), {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        data,
-        borderColor: '#7ea0d3',
-        backgroundColor: 'rgba(126,160,211,.14)',
-        fill: true,
-        tension: 0.35,
-        pointRadius: points.length < 8 ? 3 : 0,
-        pointHoverRadius: 4,
-        borderWidth: 2,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => (anonMode ? '•••' : fmt(ctx.parsed.y)),
-          },
-        },
-      },
-      scales: {
-        x: {
-          display: true,
-          ticks: { maxTicksLimit: 4, color: '#8b9aab', font: { size: 10 } },
-          grid: { display: false },
-          border: { display: false },
-        },
-        y: {
-          display: false,
-          grace: '15%',
-        },
-      },
-      animation: { duration: 280 },
-    },
-  });
-  requestAnimationFrame(() => {
-    try { charts.stagingSpark?.resize?.(); } catch (_) {}
-  });
-}
-
 function renderStaging() {
   const el = document.getElementById('staging-body');
   if (!el) return;
@@ -3277,8 +3160,6 @@ function renderStaging() {
   const sp = STATE.savingsProfile || {};
   const exp = expectedPeaThisMonth(STATE.transactions);
   if (v == null) {
-    try { charts.stagingSpark?.destroy?.(); } catch (_) {}
-    delete charts.stagingSpark;
     el.innerHTML = `<p class="muted">Set Bourso LDDS in Settings.</p><button class="btn btn-primary" type="button" onclick="showBalanceModal()">Settings</button>`;
     return;
   }
@@ -3307,7 +3188,6 @@ function renderStaging() {
     `<div class="stat"><div class="stat-lbl">Target</div><div class="stat-val blur-val">${fmt(cap)}</div></div></div>` +
     ieRow +
     `<div class="staging-viz">` +
-      `<div class="chart-wrap staging-spark"><canvas id="stagingSparkChart"></canvas></div>` +
       `<div class="staging-deploy">` +
         ring.svg +
         `<div class="staging-deploy-copy">` +
@@ -3320,7 +3200,6 @@ function renderStaging() {
     `</div>` +
     `<p class="traj-note" style="margin-top:12px">${v < cap ? `−${fmt(shrink)} to target` : 'At / above target'}` +
     `${modeNote ? ` · ${modeNote}` : ''}</p>`;
-  requestAnimationFrame(() => redrawStagingSpark());
 }
 function syncChartStyleUI(id) {
   const ids = id ? [id] : Object.keys(chartStyles);
