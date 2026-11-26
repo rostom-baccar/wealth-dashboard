@@ -1053,6 +1053,7 @@ const CHART_RANGES = [
 
 const STATE = {
   pea: 0, livretA: 0, pee: 0, checking: null, boursoLdds: null,
+  savingsProfile: null,
   monthlyNetIncome: 0, peaMonthly: 0, peaMonthsActive: 0, peaStartedAt: null,
   peaAlloc: [],
   monthlyCostBasis: 0,
@@ -1177,6 +1178,7 @@ async function decryptVaultBundle(bundle, passphrase) {
 function clearSensitiveState() {
   Object.assign(STATE, {
     pea: 0, livretA: 0, pee: 0, checking: null, boursoLdds: null,
+    savingsProfile: null,
     monthlyNetIncome: 0, peaMonthly: 0, peaMonthsActive: 0, peaStartedAt: null,
     monthlyCostBasis: 0, peaContributions: [], livretHistory: [], budgets: [],
     peaAlloc: [], transactions: [], savingsData: [],
@@ -1392,6 +1394,8 @@ function applySnapshotData(data, { live = false } = {}) {
   if (data.balances) applyBalancesPayload(data.balances, { live });
   // Money Manager Savings → LDDS staging. On live Refresh, always apply snapshot staging
   // (including 0/null) so a stale Settings/localStorage value like €900 cannot stick.
+  if (data.savingsProfile) STATE.savingsProfile = data.savingsProfile;
+  else if (live) STATE.savingsProfile = null;
   const savingsLdds = data.savingsProfile && data.savingsProfile.boursoLdds;
   const metaLdds = data.refreshMeta && Object.prototype.hasOwnProperty.call(data.refreshMeta, 'boursoLdds')
     ? data.refreshMeta.boursoLdds
@@ -3118,17 +3122,35 @@ function renderStaging() {
   const el = document.getElementById('staging-body');
   if (!el) return;
   const v = STATE.boursoLdds;
-  const locked = STATE.peaMonthly || 700;
+  const sp = STATE.savingsProfile || {};
   const exp = expectedPeaThisMonth(STATE.transactions);
   if (v == null) {
     el.innerHTML = `<p class="muted">Set Bourso LDDS in Settings.</p><button class="btn btn-primary" type="button" onclick="showBalanceModal()">Settings</button>`;
     return;
   }
+  const funded = sp.incomeTotal != null ? +sp.incomeTotal : null;
+  const withdrawn = sp.expenseTotal != null ? +sp.expenseTotal : null;
+  const mode = sp.mode || null;
   const shrink = Math.max(0, exp.stagingTarget - v);
+  const modeNote = mode === 'income-expense'
+    ? 'Money Manager: LDDS income − expenses'
+    : mode === 'live'
+      ? 'Live LDDS wallet balance'
+      : mode === 'transfers'
+        ? 'Legacy LDDS transfers (switch to income/expense when you can)'
+        : '';
+  const ieRow = (funded != null || withdrawn != null)
+    ? `<div class="stat-pair" style="margin-top:10px">` +
+      `<div class="stat"><div class="stat-lbl">Funded</div><div class="stat-val blur-val">${funded != null ? fmt(funded) : '—'}</div></div>` +
+      `<div class="stat"><div class="stat-lbl">Withdrawn</div><div class="stat-val blur-val">${withdrawn != null ? fmt(withdrawn) : '—'}</div></div>` +
+      `</div>`
+    : '';
   el.innerHTML =
-    `<div class="stat-pair"><div class="stat"><div class="stat-lbl">Staging now</div><div class="stat-val blur-val">${fmt(v)}</div></div>` +
-    `<div class="stat"><div class="stat-lbl">PEA lock</div><div class="stat-val blur-val">${fmt(Math.min(v, locked))}</div></div></div>` +
-    `<p class="traj-note" style="margin-top:12px">Target ${fmt(exp.stagingTarget)}${v < exp.stagingTarget ? ` · −${fmt(shrink)}` : ''} · expected PEA ≈ <strong class="blur-val">${fmt(exp.expectedToPea)}</strong></p>`;
+    `<div class="stat-pair"><div class="stat"><div class="stat-lbl">Available</div><div class="stat-val blur-val">${fmt(v)}</div></div>` +
+    `<div class="stat"><div class="stat-lbl">Target</div><div class="stat-val blur-val">${fmt(exp.stagingTarget)}</div></div></div>` +
+    ieRow +
+    `<p class="traj-note" style="margin-top:12px">${v < exp.stagingTarget ? `−${fmt(shrink)} to target` : 'At / above target'}` +
+    `${modeNote ? ` · ${modeNote}` : ''}</p>`;
 }
 function syncChartStyleUI(id) {
   const ids = id ? [id] : Object.keys(chartStyles);

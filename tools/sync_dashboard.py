@@ -39,8 +39,13 @@ def resolve_spend_account_id(cur) -> int | None:
 def export_savings_staging(db_path: Path) -> dict | None:
     """Savings → Bourso LDDS staging.
 
-    Active LDDS wallet: trust live balance (0 = cleared after PEA).
-    Inactive LDDS shells often keep amount=0 after transfers — use net transfers.
+    Preferred habit (like other wallets):
+      - payday: income on Boursobank LDDS (trans.type 0)
+      - PEA / Livret top-up: expense on that wallet (trans.type 1)
+    Available = income − expenses, or live wallet balance when LDDS is active.
+
+    Legacy: net transfers (type 2) only when no income/expense rows exist yet.
+    If both exist, income/expense wins (do not double-count transfers).
     """
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
@@ -56,44 +61,91 @@ def export_savings_staging(db_path: Path) -> dict | None:
         r["id"]: r["name"]
         for r in cur.execute("SELECT id, name FROM wallet")
     }
-    into = 0.0
-    out = 0.0
-    n = 0
-    for t in cur.execute(
-        "SELECT amount, wallet_id, transfer_wallet_id FROM trans WHERE account_id = ? AND type = 2",
-        (sid,),
-    ):
-        amt = abs(t["amount"] or 0) / 100.0
-        from_name = wallets.get(t["wallet_id"]) or wallets.get(
-            int(t["wallet_id"]) if t["wallet_id"] is not None else None
-        ) or ""
-        to_id = t["transfer_wallet_id"]
-        to_name = wallets.get(to_id) or wallets.get(
-            int(to_id) if to_id is not None else None
-        ) or ""
-        if "ldds" in str(to_name).lower():
-            into += amt
-            n += 1
-        if "ldds" in str(from_name).lower():
-            out += amt
-            n += 1
-    from_transfers = round(into - out, 2)
-
+    ldds_ids: set[int] = set()
     live_ldds = None
     live_active = False
     for r in cur.execute(
-        "SELECT name, amount, active FROM wallet WHERE account_id = ?", (sid,)
+        "SELECT id, name, amount, active FROM wallet WHERE account_id = ?", (sid,)
     ):
         if "ldds" in (r["name"] or "").lower():
+            ldds_ids.add(int(r["id"]))
             live_ldds = (r["amount"] or 0) / 100.0
             live_active = int(r["active"] or 0) == 1
+
+    income_total = 0.0
+    expense_total = 0.0
+    income_count = 0
+    expense_count = 0
+    into = 0.0
+    out = 0.0
+    transfer_count = 0
+    for t in cur.execute(
+        "SELECT type, amount, wallet_id, transfer_wallet_id FROM trans WHERE account_id = ?",
+        (sid,),
+    ):
+        typ = int(t["type"] or -1)
+        amt = abs(t["amount"] or 0) / 100.0
+        wid = t["wallet_id"]
+        try:
+            wid_i = int(wid) if wid is not None else None
+        except (TypeError, ValueError):
+            wid_i = None
+
+        if typ in (0, 1):
+            if wid_i not in ldds_ids:
+                continue
+            if typ == 0:
+                income_total += amt
+                income_count += 1
+            else:
+                expense_total += amt
+                expense_count += 1
+            continue
+
+        if typ != 2:
+            continue
+        from_name = wallets.get(wid) or wallets.get(wid_i) or ""
+        to_id = t["transfer_wallet_id"]
+        try:
+            to_i = int(to_id) if to_id is not None else None
+        except (TypeError, ValueError):
+            to_i = None
+        to_name = wallets.get(to_id) or wallets.get(to_i) or ""
+        if "ldds" in str(to_name).lower():
+            into += amt
+            transfer_count += 1
+        if "ldds" in str(from_name).lower():
+            out += amt
+            transfer_count += 1
+
     conn.close()
-    bourso = round(live_ldds, 2) if (live_ldds is not None and live_active) else from_transfers
+    income_total = round(income_total, 2)
+    expense_total = round(expense_total, 2)
+    from_ie = round(income_total - expense_total, 2)
+    from_transfers = round(into - out, 2)
+    has_ie = income_count > 0 or expense_count > 0
+    ledger = from_ie if has_ie else from_transfers
+    if live_ldds is not None and live_active:
+        mode = "live"
+        bourso = round(live_ldds, 2)
+    elif has_ie:
+        mode = "income-expense"
+        bourso = from_ie
+    else:
+        mode = "transfers"
+        bourso = from_transfers
+
     return {
         "profile": "Savings",
         "accountId": sid,
         "boursoLdds": bourso,
-        "transferCount": n,
+        "mode": mode,
+        "incomeTotal": income_total,
+        "expenseTotal": expense_total,
+        "incomeCount": income_count,
+        "expenseCount": expense_count,
+        "transferNet": from_transfers,
+        "transferCount": transfer_count,
         "liveActive": live_active,
         "liveLdds": live_ldds,
     }
@@ -266,7 +318,11 @@ def main() -> None:
     print(f"Wallet txs: {len(txs)} (income {sum(1 for t in txs if t['type']=='Income')})")
     print(f"Wallet budgets: {len(budgets)}")
     if savings:
-        print(f"Savings staging LDDS: €{savings.get('boursoLdds')} ({savings.get('transferCount')} transfers)")
+        print(
+            f"Savings staging LDDS: €{savings.get('boursoLdds')} "
+            f"(mode={savings.get('mode')}, funded €{savings.get('incomeTotal')}, "
+            f"withdrawn €{savings.get('expenseTotal')}, transfers {savings.get('transferCount')})"
+        )
 
     balances = load_json(finary_path) or {}
     # Fall back to balances already in the previous snapshot / Drive merge

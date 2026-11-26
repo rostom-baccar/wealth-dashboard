@@ -76,7 +76,12 @@ function exportWalletToSheet() {
     writeToSheet(trans);
     writeJsonSnapshot(trans, budgets, savings); // also write JSON for standalone dashboard
     Logger.log('Export complete: ' + trans.length + ' transactions (account ' + spendAccountId + '), ' + budgets.length + ' budgets'
-      + (savings && savings.boursoLdds != null ? ', LDDS staging €' + savings.boursoLdds : ''));
+      + (savings && savings.boursoLdds != null
+        ? (', LDDS staging €' + savings.boursoLdds
+          + ' [' + (savings.mode || '?')
+          + ' funded €' + (savings.incomeTotal != null ? savings.incomeTotal : 0)
+          + ' withdrawn €' + (savings.expenseTotal != null ? savings.expenseTotal : 0) + ']')
+        : ''));
 
   } catch(e) {
     Logger.log('ERROR: ' + e.message + '\n' + e.stack);
@@ -102,8 +107,15 @@ function resolveSpendAccountId_(accounts) {
 
 /**
  * Savings profile → Bourso LDDS staging.
- * Prefer the live LDDS wallet balance when that wallet is active (0 = cleared after PEA).
- * Inactive LDDS shells often stay at amount=0 after transfers — then use net transfers in − out.
+ *
+ * Preferred Money Manager habit (like other wallets):
+ *   - payday: income on Boursobank LDDS (trans.type 0, +amount)
+ *   - PEA / Livret top-up: expense on that wallet (trans.type 1, −amount)
+ * Available = income − expenses (or live wallet balance when the LDDS wallet is active).
+ *
+ * Legacy: net transfers into/out of LDDS (trans.type 2) if no income/expense rows yet.
+ * If both exist, income/expense wins — delete old transfer rows to avoid confusion
+ * (we do not add transfer net on top of income/expense).
  */
 function extractSavingsStaging_(db, wallets) {
   const accounts = db['account'] || [];
@@ -124,42 +136,78 @@ function extractSavingsStaging_(db, wallets) {
     });
   }
   if (savingsId == null) return null;
+
   const walletName = (id) => String(
     wallets[id] || wallets[+id] || wallets[String(id)] || ''
   );
-  let into = 0;
-  let out = 0;
-  let n = 0;
-  (db['trans'] || []).forEach(t => {
-    // SQLite parser may yield string ids — coerce before comparing.
-    if (+t['account_id'] !== +savingsId) return;
-    if (+t['type'] !== 2) return; // transfers only
-    const fromName = walletName(t['wallet_id']);
-    const toName = walletName(t['transfer_wallet_id']);
-    const amt = Math.abs(+t['amount'] || 0) / 100.0;
-    if (/ldds/i.test(toName)) { into += amt; n++; }
-    if (/ldds/i.test(fromName)) { out += amt; n++; }
-  });
-  const fromTransfers = Math.round((into - out) * 100) / 100;
-
+  const lddsIds = {};
   let liveLdds = null;
   let liveActive = false;
   (db['wallet'] || []).forEach(w => {
     if (+w['account_id'] !== +savingsId) return;
     if (!/ldds/i.test(String(w.name || ''))) return;
+    lddsIds[+w.id] = 1;
+    if (!isNaN(+w.id)) lddsIds[String(w.id)] = 1;
     liveLdds = (+w.amount || 0) / 100.0;
     liveActive = +w.active === 1;
   });
+  const isLddsWallet = (id) => !!(lddsIds[+id] || lddsIds[String(id)]);
+
+  let incomeTotal = 0;
+  let expenseTotal = 0;
+  let incomeCount = 0;
+  let expenseCount = 0;
+  let into = 0;
+  let out = 0;
+  let transferCount = 0;
+
+  (db['trans'] || []).forEach(t => {
+    if (+t['account_id'] !== +savingsId) return;
+    const typ = +t['type'];
+    const amtCents = +t['amount'] || 0;
+    const amt = Math.abs(amtCents) / 100.0;
+
+    // Income (0) / expense (1) booked directly on the LDDS wallet.
+    if (typ === 0 || typ === 1) {
+      if (!isLddsWallet(t['wallet_id'])) return;
+      if (typ === 0) { incomeTotal += amt; incomeCount++; }
+      else { expenseTotal += amt; expenseCount++; }
+      return;
+    }
+
+    // Legacy transfers involving LDDS.
+    if (typ !== 2) return;
+    const fromName = walletName(t['wallet_id']);
+    const toName = walletName(t['transfer_wallet_id']);
+    if (/ldds/i.test(toName)) { into += amt; transferCount++; }
+    if (/ldds/i.test(fromName)) { out += amt; transferCount++; }
+  });
+
+  incomeTotal = Math.round(incomeTotal * 100) / 100;
+  expenseTotal = Math.round(expenseTotal * 100) / 100;
+  const fromIncomeExpense = Math.round((incomeTotal - expenseTotal) * 100) / 100;
+  const fromTransfers = Math.round((into - out) * 100) / 100;
+  const hasIncomeExpense = incomeCount > 0 || expenseCount > 0;
+  const ledger = hasIncomeExpense ? fromIncomeExpense : fromTransfers;
+  const mode = (liveLdds != null && liveActive)
+    ? 'live'
+    : (hasIncomeExpense ? 'income-expense' : 'transfers');
 
   const boursoLdds = (liveLdds != null && liveActive)
     ? Math.round(liveLdds * 100) / 100
-    : fromTransfers;
+    : ledger;
 
   return {
     profile: 'Savings',
     accountId: savingsId,
     boursoLdds: boursoLdds,
-    transferCount: n,
+    mode: mode,
+    incomeTotal: incomeTotal,
+    expenseTotal: expenseTotal,
+    incomeCount: incomeCount,
+    expenseCount: expenseCount,
+    transferNet: fromTransfers,
+    transferCount: transferCount,
     liveActive: liveActive,
     liveLdds: liveLdds,
   };
